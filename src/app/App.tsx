@@ -3,15 +3,11 @@ import { TutorDataProvider } from '../hooks/useTutorData'
 import { Layout } from './Layout'
 import { TodayPage } from '../pages/TodayPage'
 import { StudyPage } from '../pages/StudyPage'
-
-/** Placeholder for pages that later tasks replace. */
-function Placeholder({ title }: { title: string }) {
-  return (
-    <section className="page-head">
-      <h1>{title}</h1>
-    </section>
-  )
-}
+import { TopicsPage } from '../pages/TopicsPage'
+import { TopicPage } from '../pages/TopicPage'
+import { PointPage } from '../pages/PointPage'
+import { ProgressPage } from '../pages/ProgressPage'
+import { SettingsPage } from '../pages/SettingsPage'
 
 /** Router + data shell: the Layout is the parent route and Today is the index page. */
 export function App() {
@@ -21,12 +17,12 @@ export function App() {
         <Routes>
           <Route element={<Layout />}>
             <Route index element={<TodayPage />} />
-            <Route path="topics" element={<Placeholder title="Topics" />} />
-            <Route path="topics/:topic" element={<Placeholder title="Topics" />} />
-            <Route path="point/:pointId" element={<Placeholder title="Point" />} />
+            <Route path="topics" element={<TopicsPage />} />
+            <Route path="topics/:topic" element={<TopicPage />} />
+            <Route path="point/:pointId" element={<PointPage />} />
             <Route path="study/:pointId" element={<StudyPage />} />
-            <Route path="progress" element={<Placeholder title="Progress" />} />
-            <Route path="settings" element={<Placeholder title="Settings" />} />
+            <Route path="progress" element={<ProgressPage />} />
+            <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Routes>
       </TutorDataProvider>

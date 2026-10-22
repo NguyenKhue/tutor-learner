@@ -281,3 +281,7 @@ td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
   .lesson { padding: 14px 16px; }
 }
 
+/* new pages: streak chip in the Today hero, mastered bars inside topics tables */
+.streak-chip { display: inline-block; margin-top: 10px; font: 500 13px/1 var(--font-mono); color: var(--accent); }
+.table-wrap .bar { max-width: 140px; }
+

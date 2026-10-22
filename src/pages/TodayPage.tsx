@@ -5,6 +5,7 @@ import { useHotkey } from '../hooks/useHotkey'
 import { useTutorData } from '../hooks/useTutorData'
 import { daysBetween } from '../lib/day'
 import { pointTitle } from '../lib/format'
+import { streak } from '../lib/stats'
 import { itemDone } from '../lib/today'
 import type { Point, TodayList } from '../lib/types'
 
@@ -131,6 +132,7 @@ export function TodayPage() {
               <span className="countdown">{interviewDays} days to interview</span>
             )}
           </h1>
+          <span className="streak-chip">{`${streak(data.export.points, data.today)}-day streak`}</span>
         </div>
         {total > 0 && (
           <div className="progress" aria-label="Today's progress">
