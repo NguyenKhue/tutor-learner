@@ -1,4 +1,4 @@
-import type { Attempt, EnglishNotes, Grade, HistoryEntry, Point, Question, QuestionBank, Settings } from '../src/lib/types'
+import type { Attempt, EnglishNotes, Grade, HistoryEntry, Point, Question, QuestionBank, RecordResult, Settings } from '../src/lib/types'
 import { ClaudeError } from './claude'
 import type { PromptContext } from './prompts'
 import {
@@ -213,6 +213,10 @@ export function createStudyService(deps: StudyDeps): StudyService {
     }
     const bank: QuestionBank = { point: pointId, created: today(), questions }
     await store.update((s) => {
+      // An answer may have started while Claude was writing: its question must stay in the bank.
+      if (force && s.attempts.some((a) => a.point === pointId && (a.state === 'pending' || a.state === 'graded'))) {
+        throw new StudyError('bad-state', `Finish the open answer for ${pointId} before making new questions`)
+      }
       s.banks[pointId] = structuredClone(bank)
     })
     return bank
@@ -276,6 +280,19 @@ export function createStudyService(deps: StudyDeps): StudyService {
     const grade = attempt.grade
     if (!grade) throw new StudyError('bad-state', `Attempt ${attempt.id} has no grade to record`)
     try {
+      // A crash between the vault write and saving the attempt must not write the entry twice.
+      if (attempt.recordingStarted) {
+        const done = await alreadyRecorded(attempt, grade)
+        if (done) {
+          attempt.record = done
+          attempt.state = 'recorded'
+          delete attempt.error
+          await saveAttempt(attempt)
+          return attempt
+        }
+      }
+      attempt.recordingStarted = true
+      await saveAttempt(attempt)
       const result = await tutor.record({
         point: attempt.point,
         ok: grade.ok,
@@ -293,6 +310,16 @@ export function createStudyService(deps: StudyDeps): StudyService {
     }
     await saveAttempt(attempt)
     return attempt
+  }
+
+  /** The vault's result for this attempt if its history entry is already there, else null. */
+  async function alreadyRecorded(attempt: Attempt, grade: Grade): Promise<RecordResult | null> {
+    const point = await findPoint(attempt.point)
+    const hit = point.history.some(
+      (h) => h.d === attempt.date && h.q === attempt.q && h.kind === attempt.kind && h.ok === grade.ok && h.why === grade.why,
+    )
+    if (!hit) return null
+    return { point: point.id, mastery: point.mastery, status: point.status, passed_gate: point.status === 'mastered', box: point.box, next_review: point.next_review }
   }
 
   /** Re-grades a pending attempt, or only records a graded one. */
@@ -377,6 +404,9 @@ export function createStudyService(deps: StudyDeps): StudyService {
       const question = state.banks[a.point]?.questions.find((q) => q.q === a.q)
       if (!question || question.kind === 'pretest') {
         throw new StudyError('bad-state', `Question ${a.q} is not a main question of ${a.point}`)
+      }
+      if (question.kind === 'mcq' && !isOptionIndex(a.answer, question.options?.length ?? 0)) {
+        throw new StudyError('bad-state', `Answer ${JSON.stringify(a.answer)} is not an option of ${a.q}`)
       }
       const attempt: Attempt = {
         id: newId(),
@@ -552,6 +582,11 @@ export function createStudyService(deps: StudyDeps): StudyService {
     prefetch,
     lastClaudeError,
   }
+}
+
+/** True when `answer` is a whole-number index of one of `count` options. */
+function isOptionIndex(answer: string, count: number): boolean {
+  return /^\d+$/.test(answer) && Number(answer) < count
 }
 
 /** The mcq option letter for an index, or "?" when it is out of range. */

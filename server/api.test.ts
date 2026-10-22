@@ -153,3 +153,23 @@ test('non-api paths fall through', async () => {
   const r = await fetch(s.base + '/index.html')
   expect(await r.text()).toBe('next')
 })
+
+test('cross-site GET is rejected before any work', async () => {
+  const s = await start()
+  const site = await fetch(`${s.base}/api/lesson?point=${encodeURIComponent(P1)}`, { headers: { 'Sec-Fetch-Site': 'cross-site' } })
+  expect(site.status).toBe(403)
+  const origin = await fetch(`${s.base}/api/overview`, { headers: { Origin: 'http://evil.example' } })
+  expect(origin.status).toBe(403)
+  expect(fs.existsSync(path.join(s.vault, 'Tutor/Lessons/Kotlin/01 Null safety.md'))).toBe(false)
+  const same = await fetch(`${s.base}/api/health`, { headers: { 'Sec-Fetch-Site': 'same-origin' } })
+  expect(same.status).toBe(200)
+})
+
+test('foreign Host header is rejected (DNS rebinding)', async () => {
+  const s = await start()
+  const port = new URL(s.base).port
+  const status = await new Promise<number>((resolve) => {
+    http.get({ host: '127.0.0.1', port, path: '/api/health', headers: { Host: `evil.example:${port}` } }, (res) => resolve(res.statusCode ?? 0))
+  })
+  expect(status).toBe(403)
+})

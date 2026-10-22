@@ -19,7 +19,7 @@ export interface Grade { ok: boolean; why: string; missing: string[]; feedback: 
 export interface EnglishNotes { corrected: string; notes: string[] }
 export type AttemptState = 'pending' | 'graded' | 'recorded' | 'failed'
 export interface Attempt { id: string; point: string; q: string; kind: 'learn' | 'review'; answer: string; date: string
-  state: AttemptState; grade?: Grade; english?: EnglishNotes; appealed?: boolean; appeal?: string
+  state: AttemptState; grade?: Grade; english?: EnglishNotes; appealed?: boolean; appeal?: string; recordingStarted?: boolean
   record?: RecordResult; error?: { code: 'limit' | 'auth' | 'failed' | 'record'; message: string } }
 export interface TodayList { date: string; review: string[]; fresh: string[]; extra: string[] }
 export interface Settings { newPerDay: number; englishFeedback: boolean }

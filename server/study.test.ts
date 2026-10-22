@@ -320,3 +320,62 @@ test('regenerateBank is refused while the point has an open attempt', async () =
   const err = await s.service.regenerateBank(CONCEPT).catch((e) => e)
   expect(err.code).toBe('bad-state')
 })
+
+test('regenerate that finishes after a new answer does not replace the bank', async () => {
+  const s = setup()
+  await s.service.getBank(CONCEPT)
+  let release!: () => void
+  const gate = new Promise<void>((r) => (release = r))
+  const original = s.claude.fn
+  let first = true
+  s.claude.fn = (async <T,>(prompt: string, schema: object): Promise<T> => {
+    if (schema === QUESTIONS_SCHEMA && first) {
+      first = false
+      await gate
+    }
+    return original<T>(prompt, schema)
+  }) as FakeClaude['fn']
+  const service = s.make()
+  const regen = service.regenerateBank(CONCEPT).catch((e) => e)
+  s.claude.fail = new ClaudeError('failed', 'timeout')
+  const a = await service.submit({ point: CONCEPT, q: 'q2', kind: 'learn', answer: 'x' })
+  s.claude.fail = undefined
+  release()
+  const err = await regen
+  expect(err).toBeInstanceOf(StudyError)
+  expect(err.code).toBe('bad-state')
+  expect((await service.retry(a.id)).state).toBe('recorded')
+})
+
+test('mcq answer outside the options is rejected, not recorded', async () => {
+  const s = setup()
+  await s.service.getBank(MEMORY)
+  for (const answer of ['C', '9', '-1', '1.5', '']) {
+    const err = await s.service.submit({ point: MEMORY, q: 'q2', kind: 'learn', answer }).catch((e) => e)
+    expect(err.code).toBe('bad-state')
+  }
+  expect(await s.history(MEMORY)).toEqual([])
+  expect(await s.service.openAttempts()).toEqual([])
+})
+
+test('a record that reached the vault before a crash is not written twice', async () => {
+  const s = setup({
+    tutor: (t) => ({
+      ...t,
+      record: async (a) => {
+        await t.record(a)
+        throw new Error('killed after write')
+      },
+    }),
+  })
+  await s.service.getBank(CONCEPT)
+  const a = await s.service.submit({ point: CONCEPT, q: 'q2', kind: 'learn', answer: 'x' })
+  expect(a.state).toBe('graded')
+  expect(await s.history(CONCEPT)).toHaveLength(1)
+  const healthy = createStudyService({
+    vault: s.vault, vaultName: 'V', tutor: s.tutor, store: createStateStore(s.stateFile), claude: s.claude.fn, today: () => DATE,
+  })
+  const r = await healthy.retry(a.id)
+  expect(r.state).toBe('recorded')
+  expect(await s.history(CONCEPT)).toHaveLength(1)
+})

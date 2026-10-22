@@ -107,7 +107,7 @@ export function createApiMiddleware(
   /** Handles one API request, mapping every failure onto a JSON response. */
   async function serve(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
     try {
-      if (req.method === 'POST' && !sameOrigin(req)) return send(res, 403, { error: 'forbidden origin' })
+      if (!notCrossSite(req) || (req.method === 'POST' && !sameOrigin(req))) return send(res, 403, { error: 'forbidden origin' })
       const ctx = await context()
       const body = req.method === 'POST' ? await readJson(req) : undefined
       await dispatch(ctx, req, res, url, body)
@@ -292,16 +292,28 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
 
 /** Accepts a POST only from the page served by this very host. */
 function sameOrigin(req: IncomingMessage): boolean {
+  return localHost(req) && req.headers.origin === `http://${req.headers.host}`
+}
+
+/** True when the Host header names this machine (blocks DNS rebinding). */
+function localHost(req: IncomingMessage): boolean {
   const host = req.headers.host
   if (!host) return false
-  let hostname: string
   try {
-    hostname = new URL(`http://${host}`).hostname
+    const hostname = new URL(`http://${host}`).hostname
+    return hostname === '127.0.0.1' || hostname === 'localhost'
   } catch {
     return false
   }
-  if (hostname !== '127.0.0.1' && hostname !== 'localhost') return false
-  return req.headers.origin === `http://${host}`
+}
+
+/** False for any request a browser marks as coming from another site, so GETs with side effects stay local. */
+function notCrossSite(req: IncomingMessage): boolean {
+  if (!localHost(req)) return false
+  const site = req.headers['sec-fetch-site']
+  if (site !== undefined && site !== 'same-origin' && site !== 'none') return false
+  const origin = req.headers.origin
+  return origin === undefined || origin === `http://${req.headers.host}`
 }
 
 /** Parses the request URL, or null when it is malformed. */
