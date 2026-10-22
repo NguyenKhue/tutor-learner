@@ -24,3 +24,4 @@ export interface Attempt { id: string; point: string; q: string; kind: 'learn' |
 export interface TodayList { date: string; review: string[]; fresh: string[]; extra: string[] }
 export interface Settings { newPerDay: number; englishFeedback: boolean }
 export interface AppState { version: 1; banks: Record<string, QuestionBank>; attempts: Attempt[]; today: TodayList | null; settings: Settings }
+export interface Overview { today: string; export: ExportData; topicOrder: string[]; list: TodayList; settings: Settings; vaultName: string }
