@@ -5,7 +5,7 @@ import { ClaudeError } from './claude'
 export interface PromptContext {
   point: Point
   title: string
-  question: string
+  pointQuestion: string
   scope: string
   sources: Array<{ link: string; text: string }>
 }
@@ -262,7 +262,7 @@ function pointBlock(ctx: PromptContext): string {
     '## Point',
     `- Title: ${ctx.title}`,
     `- Type: ${ctx.point.type}`,
-    `- Question: ${ctx.question}`,
+    `- Question: ${ctx.pointQuestion}`,
     `- Scope: ${ctx.scope}`,
     '',
     ...ctx.sources.map((s) => `### Source: ${s.link}\n${s.text}`),

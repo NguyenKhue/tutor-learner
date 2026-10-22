@@ -11,7 +11,7 @@ const point = (type: Point['type']): Point => ({
   status: 'new', mastery: 0, box: null, next_review: null, history: [],
 })
 const ctx = (type: Point['type'] = 'concept'): PromptContext => ({
-  point: point(type), title: 'Null safety', question: 'How does null safety work?', scope: 'Safe call, Elvis, !!.',
+  point: point(type), title: 'Null safety', pointQuestion: 'How does null safety work?', scope: 'Safe call, Elvis, !!.',
   sources: [{ link: '[[A]]', text: 'SOURCE-TEXT-A' }, { link: '[[B]]', text: 'SOURCE-TEXT-B' }],
 })
 const mcq = (q: string): Question => ({ q, kind: 'mcq', prompt: 'p', options: ['a', 'b', 'c', 'd'], answer: 1, misconceptions: ['m0', '', 'm2', 'm3'] })
@@ -52,6 +52,12 @@ test('grade prompt omits English instructions when english is false', () => {
   const p = buildGradePrompt({ ...ctx(), question: open('q1'), answer: 'x', english: false })
   expect(p).toContain('"english": null')
   expect(p).not.toContain('corrected')
+})
+
+test('grade prompt shows the point question as text', () => {
+  const p = buildGradePrompt({ ...ctx(), question: open('q1'), answer: 'x', english: false })
+  expect(p).toContain('How does null safety work?')
+  expect(p).not.toContain('[object Object]')
 })
 
 test('grade prompt with appeal includes the argument', () => {
