@@ -19,12 +19,16 @@ interface Props {
   onAppeal(reason: string): void
 }
 
+const STALLED_PENDING = { code: 'failed', message: 'not graded yet' } as const
+const STALLED_GRADED = { code: 'record', message: 'not saved yet' } as const
+
 /** The graded result card: the grade, mastery, English notes, saved answer on error, and the follow-up actions. */
 export function GradeResult({ attempt, busy = false, onContinue, onRetry, onAppeal }: Props) {
   const [appealing, setAppealing] = useState(false)
   const [reason, setReason] = useState('')
 
-  const err = attempt.error
+  // An open attempt with no error (e.g. the server stopped mid-way) still needs a way forward.
+  const err = attempt.error ?? (attempt.state === 'pending' ? STALLED_PENDING : attempt.state === 'graded' && attempt.grade?.ok ? STALLED_GRADED : undefined)
   const open = attempt.state === 'graded' && attempt.grade !== undefined && !attempt.grade.ok && !err
 
   return (
@@ -61,7 +65,9 @@ export function GradeResult({ attempt, busy = false, onContinue, onRetry, onAppe
 
       {err && (
         <div className="grade-block">
-          <p className="grade-warn">{ERROR_TEXT[err.code]}</p>
+          <p className="grade-warn">
+            {err === STALLED_PENDING ? 'Your answer is saved but not graded yet.' : err === STALLED_GRADED ? 'The result is not saved yet.' : ERROR_TEXT[err.code]}
+          </p>
           <div className="row">
             <button type="button" className="btn primary" disabled={busy} onClick={onRetry}>
               {err.code === 'record' ? 'Save result' : 'Grade again'}

@@ -221,3 +221,15 @@ test('reloads overview after a recorded answer', async () => {
   await screen.findByText('Correct')
   await waitFor(() => expect(calls.filter((c) => c.path === '/api/overview').length).toBeGreaterThanOrEqual(2))
 })
+
+test('a pending attempt without an error can be graded again', async () => {
+  const pending = attempt({ state: 'pending', grade: undefined, record: undefined, error: undefined })
+  const calls = mockApi(routes(open, { 'GET /api/open-attempts': [pending], 'POST /api/attempt/retry': attempt() }))
+  goTo(URL_LEARN)
+  render(<App />)
+  expect(await screen.findByText('my answer')).toBeInTheDocument()
+  expect(screen.getByText(/not graded yet/i)).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Grade again' }))
+  expect(await screen.findByText('Correct')).toBeInTheDocument()
+  expect(calls.find((c) => c.path === '/api/attempt/retry')!.body).toEqual({ id: 'a1' })
+})
