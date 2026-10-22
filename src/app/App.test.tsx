@@ -1,7 +1,14 @@
 import { render, screen } from '@testing-library/react'
+import { afterEach, expect, test, vi } from 'vitest'
+import { goTo, mockApi } from '../test/api'
+import { makeOverview } from '../test/fixtures'
 import { App } from './App'
 
-test('renders the app shell', () => {
+afterEach(() => vi.unstubAllGlobals())
+
+test('renders the app shell', async () => {
+  mockApi({ 'GET /api/overview': makeOverview() })
+  goTo('/')
   render(<App />)
-  expect(screen.getByText('Tutor')).toBeInTheDocument()
+  expect(await screen.findByText('Tutor')).toBeInTheDocument()
 })
