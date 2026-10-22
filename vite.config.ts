@@ -1,6 +1,6 @@
 import react from '@vitejs/plugin-react'
 import path from 'node:path'
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 import { tutorApiPlugin } from './server/plugin'
 
 export default defineConfig({
@@ -10,6 +10,7 @@ export default defineConfig({
   resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
   test: {
     globals: true,
+    exclude: [...configDefaults.exclude, '.superpowers/**'],
     environment: 'node',
     environmentMatchGlobs: [['src/**/*.test.tsx', 'jsdom']],
     setupFiles: ['./src/test/setup.ts'],
