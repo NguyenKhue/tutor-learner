@@ -2,7 +2,7 @@
 
 Ngày: 2026-10-22. Trạng thái: chờ duyệt.
 
-Tài liệu này nối tiếp [[Tutor/Design/spec|spec giai đoạn 1]]. Những gì giai đoạn 1 đã quyết (mô hình dữ liệu, cách tính mastery, lịch ôn, cổng) giữ nguyên, ở đây chỉ nhắc lại khi cần.
+Tài liệu này nối tiếp spec giai đoạn 1 (`Khue Vault/Tutor/Design/spec.md`). Những gì giai đoạn 1 đã quyết (mô hình dữ liệu, cách tính mastery, lịch ôn, cổng) giữ nguyên, ở đây chỉ nhắc lại khi cần.
 
 ## 1. Vì sao làm
 
