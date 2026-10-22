@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { TutorDataProvider } from '../hooks/useTutorData'
 import { Layout } from './Layout'
 import { TodayPage } from '../pages/TodayPage'
+import { StudyPage } from '../pages/StudyPage'
 
 /** Placeholder for pages that later tasks replace. */
 function Placeholder({ title }: { title: string }) {
@@ -23,7 +24,7 @@ export function App() {
             <Route path="topics" element={<Placeholder title="Topics" />} />
             <Route path="topics/:topic" element={<Placeholder title="Topics" />} />
             <Route path="point/:pointId" element={<Placeholder title="Point" />} />
-            <Route path="study/:pointId" element={<Placeholder title="Study" />} />
+            <Route path="study/:pointId" element={<StudyPage />} />
             <Route path="progress" element={<Placeholder title="Progress" />} />
             <Route path="settings" element={<Placeholder title="Settings" />} />
           </Route>
