@@ -1,0 +1,90 @@
+/* Algorithm Learner tokens. Layout: one quiet column (max 880px) on dotted notebook paper; cards are the only raised objects. */
+:root {
+  --bg: #f6f6f2;
+  --grid: #e3e4dc;
+  --surface: #ffffff;
+  --surface-done: #fbfbf8;
+  --ink: #1d221f;
+  --muted: #6a706a;
+  --line: #e2e3dc;
+  --accent: #3d6b50;
+  --accent-soft: #e6efe8;
+  --accent-line: #b9cfc0;
+  --on-accent: #ffffff;
+  --again: #b0503a;
+  --hard: #a87420;
+  --good: #3d6b50;
+  --easy: #3f7398;
+  --again-soft: #f6e7e2;
+  --hard-soft: #f6eedd;
+  --good-soft: #e6efe8;
+  --easy-soft: #e4edf4;
+  --code-bg: #f9f9f6;
+  --heat-0: #e6e7e0;
+  --heat-1: #c8dccd;
+  --heat-2: #96bba0;
+  --heat-3: #5f8f6e;
+  --heat-4: #3d6b50;
+  --font-ui: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #141413;
+    --grid: #22231f;
+    --surface: #1c1d1a;
+    --surface-done: #181917;
+    --ink: #ebebe5;
+    --muted: #9a9d94;
+    --line: #2d2f2a;
+    --accent: #8dbb9b;
+    --accent-soft: #223029;
+    --accent-line: #3f5a49;
+    --on-accent: #10160f;
+    --again: #e08a70;
+    --hard: #dcae5e;
+    --good: #8dbb9b;
+    --easy: #8ab6d8;
+    --again-soft: #33221d;
+    --hard-soft: #322a1b;
+    --good-soft: #223029;
+    --easy-soft: #1d2a34;
+    --code-bg: #171815;
+    --heat-0: #252723;
+    --heat-1: #2f4537;
+    --heat-2: #44684f;
+    --heat-3: #6a9877;
+    --heat-4: #8dbb9b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme='dark'] {
+  --bg: #141413;
+  --grid: #22231f;
+  --surface: #1c1d1a;
+  --surface-done: #181917;
+  --ink: #ebebe5;
+  --muted: #9a9d94;
+  --line: #2d2f2a;
+  --accent: #8dbb9b;
+  --accent-soft: #223029;
+  --accent-line: #3f5a49;
+  --on-accent: #10160f;
+  --again: #e08a70;
+  --hard: #dcae5e;
+  --good: #8dbb9b;
+  --easy: #8ab6d8;
+  --again-soft: #33221d;
+  --hard-soft: #322a1b;
+  --good-soft: #223029;
+  --easy-soft: #1d2a34;
+  --code-bg: #171815;
+  --heat-0: #252723;
+  --heat-1: #2f4537;
+  --heat-2: #44684f;
+  --heat-3: #6a9877;
+  --heat-4: #8dbb9b;
+  color-scheme: dark;
+}

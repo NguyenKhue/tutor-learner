@@ -3,3 +3,5 @@ dist/
 dist-server/
 .data/
 .superpowers/
+.DS_Store
+*.local
