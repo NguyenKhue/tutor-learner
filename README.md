@@ -1,11 +1,33 @@
 # tutor-learner
 
-A quiet, local web app for studying the **Tutor** points in the Obsidian vault. You answer questions in the browser,
-Claude Code grades them on this Mac, and the score is written to the vault by `tutor.py record`. Obsidian's
+**A local study app for interview prep: learn from your own Obsidian notes, answer in your own words, and let Claude
+grade you, with spaced repetition that counts down to the interview day.**
+
+A quiet, local web app for studying the **Tutor** points in an Obsidian vault. You answer questions in the browser,
+Claude Code grades them on your Mac, and the score is written to the vault by `tutor.py record`. Obsidian's
 `Tutor/Dashboard.md` and this app always show the same status.
 
 No account and no API key. Grading runs `claude -p` with your Claude Pro login, so every grade counts against your
 plan's usage, the same as a chat message.
+
+| Today | Topics | Progress |
+|---|---|---|
+| ![Today](docs/images/today.png) | ![Topics](docs/images/topics.png) | ![Progress](docs/images/progress.png) |
+
+## What you need
+
+This app is the web front end of an Obsidian **Tutor** setup. It does not create study material by itself. The vault
+must already have:
+
+- `Tutor/Points/<Topic>/<NN Name>.md`: one note per knowledge point. The frontmatter has `tutor: point`, `topic`,
+  `type` (`memory` | `procedure` | `concept`), `interview`, `order`, `sources` (wikilinks to your notes), and the
+  fields `status`, `mastery`, `box`, `next_review` and `history`, which only `tutor.py` writes. The body has
+  `**Question:**` and `**Scope:**` lines.
+- `Tutor/config.md` (`interview_date`, `interview_buffer_days`, `threshold`, `daily_review_cap`) and
+  `Tutor/Roadmap.md` (`topic_order`).
+- `.claude/skills/tutor/scripts/tutor.py`: the scorer and scheduler (standard-library Python, no network).
+
+Topics and points are created in the terminal with the Claude Code `tutor` skill. This app only studies them.
 
 ## What it does
 
