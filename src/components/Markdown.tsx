@@ -122,8 +122,11 @@ function inline(text: string, links: MarkdownLinks = {}): ReactNode[] {
     if (m[1]) out.push(<code key={n++}>{m[1].slice(1, -1)}</code>)
     else if (m[2]) {
       const src = m[2].startsWith('![[') ? m[2].slice(3, -2).split('|')[0] : (/\(([^)\s]+)\)$/.exec(m[2])?.[1] ?? '')
-      if (links.notePath && !/^[a-z]+:/i.test(src))
-        out.push(<img key={n++} alt={src} src={`/api/vault-image?note=${encodeURIComponent(links.notePath)}&src=${encodeURIComponent(src)}`} />)
+      const alt = m[2].startsWith('![[') ? src : (/^!\[([^\]]*)\]/.exec(m[2])?.[1] || src)
+      if (/^https?:\/\//i.test(src))
+        out.push(<img key={n++} alt={alt} src={src} referrerPolicy="no-referrer" loading="lazy" />)
+      else if (links.notePath && !/^[a-z]+:/i.test(src))
+        out.push(<img key={n++} alt={alt} src={`/api/vault-image?note=${encodeURIComponent(links.notePath)}&src=${encodeURIComponent(src)}`} />)
       else out.push(<span key={n++}>{m[2]}</span>)
     } else if (m[3]) {
       const [target, alias] = m[3].slice(2, -2).split('|')

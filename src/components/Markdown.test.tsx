@@ -26,3 +26,15 @@ test('skips frontmatter', () => {
   expect(screen.getByRole('heading', { name: 'Title' })).toBeInTheDocument()
   expect(screen.queryByText(/tags/)).toBeNull()
 })
+
+test('shows images from the web', () => {
+  render(<MemoryRouter><Markdown text="![DIP illustration](https://miro.medium.com/v2/resize:fit:700/1*Luy.png)" notePath="Android/DIP.md" /></MemoryRouter>)
+  const img = screen.getByRole('img', { name: 'DIP illustration' })
+  expect(img).toHaveAttribute('src', 'https://miro.medium.com/v2/resize:fit:700/1*Luy.png')
+  expect(img).toHaveAttribute('referrerpolicy', 'no-referrer')
+})
+
+test('does not load other URL schemes as images', () => {
+  render(<MemoryRouter><Markdown text="![x](javascript:alert(1))" notePath="A.md" /></MemoryRouter>)
+  expect(screen.queryByRole('img')).toBeNull()
+})
