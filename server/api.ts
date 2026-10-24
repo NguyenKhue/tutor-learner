@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import type { Attempt, Overview, Question, Settings, TodayList } from '../src/lib/types'
+import { deriveReading, interviewCap } from '../src/lib/readingSchedule'
 import { localToday } from '../src/lib/day'
 import { addExtra, buildToday, ensureToday } from '../src/lib/today'
 import { ClaudeError, runClaude } from './claude'
@@ -11,6 +12,8 @@ import { createStateStore, type StateStore } from './state'
 import { StudyError, createStudyService, type StudyService } from './study'
 import { TutorCliError, createTutorCli, type TutorCli } from './tutor'
 import { BadPath } from './vault'
+import { resolveVaultImage } from './reading/images'
+import { createReadingService, type ReadingService } from './reading/service'
 
 /** Where the API reads its config and keeps its state. */
 export interface ApiPaths {
@@ -39,6 +42,7 @@ interface ApiContext {
   tutor: TutorCli
   store: StateStore
   study: StudyService
+  reading: ReadingService
   today: () => string
 }
 
@@ -101,7 +105,8 @@ export function createApiMiddleware(
       claude,
       today,
     })
-    return { config, tutor, store, study, today }
+    const reading = createReadingService({ vault: config.vault, tutor, store, claude, today })
+    return { config, tutor, store, study, reading, today }
   }
 
   /** Handles one API request, mapping every failure onto a JSON response. */
@@ -164,6 +169,37 @@ export function createApiMiddleware(
         return send(res, 200, await ctx.study.updateSettings(settingsPatch(body)))
       case 'GET /api/health':
         return send(res, 200, health(ctx))
+      case 'GET /api/reading': {
+        const o = await ctx.reading.overview()
+        if (prefetch && !ctx.reading.classifying() && o.classify.done < o.classify.total && !o.classify.error) void ctx.reading.classifyPending()
+        return send(res, 200, o)
+      }
+      case 'POST /api/reading/classify':
+        void ctx.reading.classifyPending()
+        return send(res, 200, await ctx.reading.overview())
+      case 'POST /api/reading/reclassify': {
+        const b = record(body)
+        void ctx.reading.reclassify(b.all === true ? 'all' : field(body, 'path'))
+        return send(res, 200, { ok: true })
+      }
+      case 'GET /api/reading/note':
+        return send(res, 200, await ctx.reading.note(query(url, 'path')))
+      case 'POST /api/reading/quiz':
+        return send(res, 200, await ctx.reading.quiz(field(body, 'path')))
+      case 'POST /api/reading/check':
+        return send(res, 200, await ctx.reading.submit(field(body, 'path'), answersOf(record(body).answers)))
+      case 'POST /api/reading/check/retry':
+        return send(res, 200, await ctx.reading.retry(field(body, 'path'), field(body, 'id')))
+      case 'POST /api/reading/check/appeal':
+        return send(res, 200, await ctx.reading.appeal(field(body, 'path'), field(body, 'id'), field(body, 'reason')))
+      case 'POST /api/reading/skip': {
+        const skipped = record(body).skipped
+        if (typeof skipped !== 'boolean') throw new HttpError(400, 'skipped must be a boolean')
+        await ctx.reading.skip(field(body, 'path'), skipped)
+        return send(res, 200, { ok: true })
+      }
+      case 'GET /api/vault-image':
+        return sendImage(res, resolveVaultImage(ctx.config.vault, query(url, 'note'), query(url, 'src')))
       default:
         return send(res, 404, { error: 'not found' })
     }
@@ -175,11 +211,13 @@ export function createApiMiddleware(
     const [exp, due] = await Promise.all([ctx.tutor.exportData(date), ctx.tutor.due(date)])
     const topicOrder = readTopicOrder(ctx.config.vault)
     const settings = await ctx.study.getSettings()
+    const locked = (await ctx.store.read()).today
+    const readingDue = locked?.date === date ? [] : await ctx.reading.todayReading(settings.readingReviewsPerDay)
     const list = await ctx.store.update((s) =>
       (s.today = ensureToday(
         s.today,
-        () =>
-          buildToday({
+        () => ({
+          ...buildToday({
             date,
             due,
             points: exp.points,
@@ -187,11 +225,33 @@ export function createApiMiddleware(
             cap: exp.config.daily_review_cap,
             newPerDay: settings.newPerDay,
           }),
+          reading: readingDue,
+        }),
         date,
       )),
     )
     if (prefetch) void ctx.study.prefetch([...list.review, ...list.fresh, ...list.extra])
-    return { today: date, export: exp, topicOrder, list, settings, vaultName: path.basename(ctx.config.vault) }
+    const reading = await readingToday(ctx, list.reading ?? [], date, interviewCap(exp.config))
+    return { today: date, export: exp, topicOrder, list: { ...list, reading: list.reading ?? [] }, settings, vaultName: path.basename(ctx.config.vault), reading }
+  }
+
+  /** Title, topic and today's done flag of the reading notes locked into Today. */
+  async function readingToday(ctx: ApiContext, paths: string[], date: string, cap: string | null): Promise<NonNullable<Overview['reading']>> {
+    const state = await ctx.store.read()
+    const out: NonNullable<Overview['reading']> = {}
+    for (const p of paths) {
+      const entry = state.reading.catalog[p]
+      const checks = state.reading.progress[p]?.checks ?? []
+      const graded = checks.filter((c) => c.state === 'graded')
+      const before = graded.filter((c) => c.date < date)
+      out[p] = {
+        title: entry?.title ?? p,
+        topic: entry?.topic ?? null,
+        done: graded.some((c) => c.date === date),
+        kind: deriveReading(before, date, cap).status === 'reread' ? 'reread' : 'recheck',
+      }
+    }
+    return out
   }
 
   /** Locks today's list if needed, then appends one optional item to it. */
@@ -228,7 +288,7 @@ export function createApiMiddleware(
   /** Reports the last Claude failure and whether the vault looks like a tutor vault. */
   function health(ctx: ApiContext): { claude: { lastError: Attempt['error'] | null }; vault: boolean } {
     return {
-      claude: { lastError: ctx.study.lastClaudeError() },
+      claude: { lastError: ctx.study.lastClaudeError() ?? readingError(ctx) },
       vault: fs.existsSync(path.join(ctx.config.vault, 'Tutor', 'Points')),
     }
   }
@@ -365,11 +425,39 @@ function pretestAnswer(value: unknown): string | null {
   return value
 }
 
-/** Validates a settings patch and keeps only the two known keys. */
+/** The reading service's last Claude failure in the health shape. */
+function readingError(ctx: ApiContext): Attempt['error'] | null {
+  const e = ctx.reading.lastError()
+  return e ? { code: e.code, message: e.message } : null
+}
+
+/** Validates reading quiz answers: an object of question code to text. */
+function answersOf(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new HttpError(400, 'answers must be an object')
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(value)) {
+    if (typeof v !== 'string') throw new HttpError(400, `answer ${k} must be a string`)
+    out[k] = v
+  }
+  return out
+}
+
+/** Streams a vault image (SVG sandboxed), or 404 when the embed does not resolve to one. */
+function sendImage(res: ServerResponse, image: { file: string; type: string } | null): void {
+  if (!image) return send(res, 404, { error: 'not found' })
+  res.statusCode = 200
+  res.setHeader('Content-Type', image.type)
+  res.setHeader('Cache-Control', 'private, max-age=3600')
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  if (image.type === 'image/svg+xml') res.setHeader('Content-Security-Policy', 'sandbox')
+  res.end(fs.readFileSync(image.file))
+}
+
+/** Validates a settings patch and keeps only the known keys. */
 function settingsPatch(body: unknown): Partial<Settings> {
   const b = record(body)
   for (const key of Object.keys(b)) {
-    if (key !== 'newPerDay' && key !== 'englishFeedback') throw new HttpError(400, `unknown setting ${key}`)
+    if (key !== 'newPerDay' && key !== 'englishFeedback' && key !== 'readingReviewsPerDay') throw new HttpError(400, `unknown setting ${key}`)
   }
   const patch: Partial<Settings> = {}
   if ('newPerDay' in b) {
@@ -378,6 +466,13 @@ function settingsPatch(body: unknown): Partial<Settings> {
       throw new HttpError(400, 'newPerDay must be an integer 1-10')
     }
     patch.newPerDay = value
+  }
+  if ('readingReviewsPerDay' in b) {
+    const value = b.readingReviewsPerDay
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 10) {
+      throw new HttpError(400, 'readingReviewsPerDay must be an integer 0-10')
+    }
+    patch.readingReviewsPerDay = value
   }
   if ('englishFeedback' in b) {
     if (typeof b.englishFeedback !== 'boolean') throw new HttpError(400, 'englishFeedback must be a boolean')
