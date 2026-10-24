@@ -18,6 +18,8 @@ interface Row {
   kind: Kind
   done: boolean
   point: Point | undefined
+  /** Set for a note in "Reading review": its title, topic and whether it is a reread. */
+  note?: { title: string; topic: string | null; reread: boolean }
 }
 
 /** A friendly date like `Thursday, October 22` for a YYYY-MM-DD string. */
@@ -31,7 +33,7 @@ function Item({ row }: { row: Row }) {
     <li className={`card${row.done ? ' done' : ''}`}>
       <div className="head">
         <h3 className="title">
-          <Link to={row.href}>{pointTitle(row.id)}</Link>
+          <Link to={row.href}>{row.note ? row.note.title : pointTitle(row.id)}</Link>
         </h3>
         {row.done && (
           <span className="check" aria-label="Done">
@@ -40,6 +42,8 @@ function Item({ row }: { row: Row }) {
         )}
       </div>
       <div className="meta">
+        {row.note?.topic && <span>{row.note.topic}</span>}
+        {row.note && <span className="tag">{row.note.reread ? 'read again' : 'recheck'}</span>}
         {point && <span>{point.topic}</span>}
         {point && <span className="tag">{point.type}</span>}
         {point?.interview && <span className="tag interview">interview</span>}
@@ -50,7 +54,7 @@ function Item({ row }: { row: Row }) {
 
 /** One named accessible region of today's list (Review / New / Extra). */
 function Section({ name, rows }: { name: string; rows: Row[] }) {
-  const id = `${name.toLowerCase()}-h`
+  const id = `${name.replace(/\s+/g, '-').toLowerCase()}-h`
   return (
     <section aria-labelledby={id}>
       <h2 id={id}>{name}</h2>
@@ -69,8 +73,8 @@ export function TodayPage() {
   const navigate = useNavigate()
   const [pending, setPending] = useState(false)
 
-  const { review, fresh, extra } = useMemo(() => {
-    if (!data) return { review: [], fresh: [], extra: [] }
+  const { review, fresh, extra, reading } = useMemo(() => {
+    if (!data) return { review: [], fresh: [], extra: [], reading: [] }
     const byId = new Map(data.export.points.map((p) => [p.id, p]))
     const rowOf = (id: string, kind: Kind): Row => {
       const point = byId.get(id)
@@ -89,10 +93,21 @@ export function TodayPage() {
       const due = !!point?.next_review && point.next_review <= data.today
       return rowOf(id, due ? 'review' : 'learn')
     })
-    return { review, fresh, extra }
+    const reading: Row[] = (data.list.reading ?? []).map((path) => {
+      const info = data.reading?.[path]
+      return {
+        id: path,
+        href: `/read/${encodeURIComponent(path)}`,
+        kind: 'review',
+        point: undefined,
+        done: !!info?.done,
+        note: { title: info?.title ?? path, topic: info?.topic ?? null, reread: info?.kind === 'reread' },
+      }
+    })
+    return { review, fresh, extra, reading }
   }, [data])
 
-  const rows = useMemo(() => [...review, ...fresh, ...extra], [review, fresh, extra])
+  const rows = useMemo(() => [...review, ...fresh, ...extra, ...reading], [review, fresh, extra, reading])
 
   const done = rows.filter((r) => r.done).length
   const total = rows.length
@@ -149,6 +164,7 @@ export function TodayPage() {
       {review.length > 0 && <Section name="Review" rows={review} />}
       {fresh.length > 0 && <Section name="New" rows={fresh} />}
       {extra.length > 0 && <Section name="Extra" rows={extra} />}
+      {reading.length > 0 && <Section name="Reading review" rows={reading} />}
       {total === 0 && <p className="hint">Nothing left today.</p>}
 
       <div className="foot">

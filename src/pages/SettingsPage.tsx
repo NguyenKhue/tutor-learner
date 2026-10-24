@@ -10,6 +10,12 @@ interface Health {
 
 const asMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
+/** A whole number 0-10 from the input, or the saved value when the input is not a number. */
+const clampReading = (value: string, fallback: number) => {
+  const n = Number(value)
+  return value.trim() !== '' && Number.isFinite(n) ? Math.min(10, Math.max(0, Math.round(n))) : fallback
+}
+
 /** Settings: the per-day amount and English feedback (POSTed to the server), plus read-only status. */
 export function SettingsPage() {
   const { data, reload } = useTutorData()
@@ -17,6 +23,7 @@ export function SettingsPage() {
   // null means untouched, so the input follows data.settings until the user edits it.
   const [newPerDay, setNewPerDay] = useState<string | null>(null)
   const [english, setEnglish] = useState<boolean | null>(null)
+  const [readingPerDay, setReadingPerDay] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState<ApiError | null>(null)
@@ -41,6 +48,7 @@ export function SettingsPage() {
 
   const perDay = newPerDay ?? String(data.settings.newPerDay)
   const englishFeedback = english ?? data.settings.englishFeedback
+  const readingReviews = readingPerDay ?? String(data.settings.readingReviewsPerDay ?? 3)
   const claude = health?.claude
 
   /** POSTs both settings, then refetches the overview so the whole app follows. */
@@ -52,6 +60,7 @@ export function SettingsPage() {
       await api.post<Settings>('/api/settings', {
         newPerDay: Number.isFinite(n) ? Math.min(10, Math.max(1, Math.round(n))) : data.settings.newPerDay,
         englishFeedback,
+        readingReviewsPerDay: clampReading(readingReviews, data.settings.readingReviewsPerDay ?? 3),
       })
       await reload()
       setSaved(true)
@@ -87,6 +96,19 @@ export function SettingsPage() {
               max={10}
               value={perDay}
               onChange={(e) => setNewPerDay(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="reading-per-day">Reading reviews per day</label>
+            <input
+              id="reading-per-day"
+              type="number"
+              className="mono"
+              inputMode="numeric"
+              min={0}
+              max={10}
+              value={readingReviews}
+              onChange={(e) => setReadingPerDay(e.target.value)}
             />
           </div>
           <div className="field">

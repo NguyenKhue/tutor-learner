@@ -90,7 +90,7 @@ test('settings saves new per day', async () => {
   await userEvent.type(input, '5')
   await userEvent.click(screen.getByRole('button', { name: 'Save' }))
   expect(await screen.findByText('Saved')).toBeInTheDocument()
-  expect(calls.find((c) => c.method === 'POST' && c.path === '/api/settings')!.body).toEqual({ newPerDay: 5, englishFeedback: true })
+  expect(calls.find((c) => c.method === 'POST' && c.path === '/api/settings')!.body).toEqual({ newPerDay: 5, englishFeedback: true, readingReviewsPerDay: 3 })
   expect(screen.getByText(/usage limit/)).toBeInTheDocument()
 })
 
@@ -105,6 +105,6 @@ test('settings toggles english feedback', async () => {
   await userEvent.click(await screen.findByRole('checkbox', { name: 'English feedback' }))
   await userEvent.click(screen.getByRole('button', { name: 'Save' }))
   await screen.findByText('Saved')
-  expect(calls.find((c) => c.method === 'POST')!.body).toEqual({ newPerDay: 3, englishFeedback: false })
+  expect(calls.find((c) => c.method === 'POST')!.body).toEqual({ newPerDay: 3, englishFeedback: false, readingReviewsPerDay: 3 })
   expect(screen.getByText(/Claude: OK/)).toBeInTheDocument()
 })

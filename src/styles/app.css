@@ -285,3 +285,19 @@ td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .streak-chip { display: inline-block; margin-top: 10px; font: 500 13px/1 var(--font-mono); color: var(--accent); }
 .table-wrap .bar { max-width: 140px; }
 
+
+/* Reading */
+.reader .md { font-size: 15.5px; line-height: 1.65; }
+.md img { max-width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); background: #fff; }
+.md table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.md th, .md td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+.md blockquote { margin: 12px 0; padding: 8px 14px; border-left: 3px solid var(--accent); background: var(--surface); border-radius: 0 8px 8px 0; color: var(--ink); }
+.btn.small { padding: 4px 10px; font-size: 12.5px; }
+.link-btn { background: none; border: 0; padding: 0 4px; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; }
+.link-btn:hover { text-decoration: underline; }
+.plain-list { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 6px; }
+.quiz .field { display: grid; gap: 6px; }
+.quiz textarea { width: 100%; }
+.ok-line { color: var(--good); margin: 4px 0; }
+.no-line { color: var(--again); margin: 4px 0; }
+section + section { margin-top: 28px; }

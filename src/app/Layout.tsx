@@ -3,6 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 
 const NAV = [
   ['/', 'Today'],
+  ['/reading', 'Reading'],
   ['/topics', 'Topics'],
   ['/progress', 'Progress'],
   ['/settings', 'Settings'],
