@@ -171,7 +171,7 @@ export function createApiMiddleware(
         return send(res, 200, health(ctx))
       case 'GET /api/reading': {
         const o = await ctx.reading.overview()
-        if (prefetch && !ctx.reading.classifying() && o.classify.done < o.classify.total && !o.classify.error) void ctx.reading.classifyPending()
+        if (prefetch && !ctx.reading.classifying() && o.classify.done > 0 && o.classify.done < o.classify.total && !o.classify.error) void ctx.reading.classifyPending()
         return send(res, 200, o)
       }
       case 'POST /api/reading/classify':

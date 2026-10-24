@@ -20,7 +20,7 @@ afterEach(async () => {
   cleanups = []
 })
 
-async function start(opts: { claudeFail?: ClaudeError } = {}) {
+async function start(opts: { claudeFail?: ClaudeError; prefetch?: boolean } = {}) {
   const v = makeTestVault(
     [
       { topic: 'Kotlin', name: '01 Null safety', type: 'concept', order: 1, sources: ['[[Notes/A]]'] },
@@ -44,7 +44,13 @@ async function start(opts: { claudeFail?: ClaudeError } = {}) {
     if (schema === READING_GRADE_SCHEMA) return { results: ['r1', 'r2', 'r3'].map((q) => ({ q, ok: true, why: 'w', missing: [], feedback: 'f' })), english: null } as T
     throw new Error('schema')
   }
-  const mw = createApiMiddleware({ configFile, dataDir }, { claude, today: () => day, prefetch: false })
+  const claudeCalls: object[] = []
+  const counted = claude
+  const claudeFn = async <T,>(prompt: string, schema: object): Promise<T> => {
+    claudeCalls.push(schema)
+    return counted<T>(prompt, schema)
+  }
+  const mw = createApiMiddleware({ configFile, dataDir }, { claude: claudeFn, today: () => day, prefetch: opts.prefetch ?? false })
   const server = http.createServer((req, res) => mw(req as never, res as never, () => {
     res.statusCode = 404
     res.end('next')
@@ -62,7 +68,7 @@ async function start(opts: { claudeFail?: ClaudeError } = {}) {
     const r = await fetch(base + p, { method: 'POST', headers, body: JSON.stringify(body) })
     return { status: r.status, body: await r.json() }
   }
-  return { base, get, post, vault: v.vault, setDay: (d: string) => (day = d) }
+  return { base, get, post, vault: v.vault, setDay: (d: string) => (day = d), claudeCalls }
 }
 
 test('overview locks today\'s list', async () => {
@@ -241,4 +247,18 @@ test('reading routes refuse cross-site requests', async () => {
   const s = await start()
   expect((await fetch(`${s.base}/api/reading`, { headers: { 'Sec-Fetch-Site': 'cross-site' } })).status).toBe(403)
   expect((await fetch(`${s.base}/api/vault-image?note=${enc(NOTE)}&src=fig.png`, { headers: { 'Sec-Fetch-Site': 'cross-site' } })).status).toBe(403)
+})
+
+test('opening the reading tab does not start the first classification', async () => {
+  const s = await start({ prefetch: true })
+  await s.get('/api/reading')
+  await new Promise((r) => setTimeout(r, 200))
+  expect(s.claudeCalls.filter((c) => c === CLASSIFY_SCHEMA)).toHaveLength(0)
+  await s.post('/api/reading/classify', {})
+  await new Promise((r) => setTimeout(r, 300))
+  fs.writeFileSync(path.join(s.vault, 'Notes/New.md'), 'new note')
+  const before = s.claudeCalls.length
+  await s.get('/api/reading')
+  await new Promise((r) => setTimeout(r, 300))
+  expect(s.claudeCalls.length).toBe(before + 1)
 })
