@@ -117,3 +117,12 @@ test('parses the command line', () => {
   expect(() => parseArgs(['--data', '/d', '--port', 'x', '--static', '/s'])).toThrow(/port/)
   expect(() => parseArgs(['--nope'])).toThrow(/Unknown/)
 })
+
+test('serves the app for note paths that end in .md', async () => {
+  const s = await start()
+  const r = await request(s.url, `/read/${encodeURIComponent('Books/B/Chapter 1.md')}`)
+  expect(r.status).toBe(200)
+  expect(r.body).toContain('<title>app</title>')
+  expect((await request(s.url, '/assets/missing.js')).status).toBe(404)
+  expect((await request(s.url, '/assets/missing.png')).status).toBe(404)
+})

@@ -75,7 +75,8 @@ function serveStatic(staticDir: string, req: http.IncomingMessage, res: http.Ser
   }
   const isFile = fs.existsSync(file) && fs.statSync(file).isFile()
   // client routes (/problems/x) get the app; a missing asset is a real 404
-  const target = isFile ? file : path.extname(pathname) ? null : path.join(staticDir, 'index.html')
+  // a missing file with a known asset type is a real 404; anything else (/read/x.md) is a client route
+  const target = isFile ? file : TYPES[path.extname(pathname)] ? null : path.join(staticDir, 'index.html')
   if (!target) {
     res.statusCode = 404
     return res.end('not found')
