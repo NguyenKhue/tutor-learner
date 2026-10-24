@@ -130,7 +130,7 @@ test('settings rejects newPerDay 0', async () => {
   const s = await start()
   expect((await s.post('/api/settings', { newPerDay: 0 })).status).toBe(400)
   const ok = await s.post('/api/settings', { newPerDay: 5, englishFeedback: false })
-  expect(ok.body).toEqual({ newPerDay: 5, englishFeedback: false })
+  expect(ok.body).toEqual({ newPerDay: 5, englishFeedback: false, readingReviewsPerDay: 3 })
 })
 
 test('bad json is 400', async () => {

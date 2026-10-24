@@ -9,14 +9,22 @@ export interface StateStore {
 }
 
 export function emptyState(): AppState {
-  return { version: 1, banks: {}, attempts: [], today: null, settings: { newPerDay: 3, englishFeedback: true } }
+  return {
+    version: 1,
+    banks: {},
+    attempts: [],
+    today: null,
+    settings: { newPerDay: 3, englishFeedback: true, readingReviewsPerDay: 3 },
+    reading: { catalog: {}, quizzes: {}, progress: {} },
+  }
 }
 
 function validateState(v: unknown): AppState {
   const s = v as Partial<AppState> | null
   if (!s || typeof s !== 'object' || s.version !== 1) throw new Error('unknown state version')
   if (typeof s.banks !== 'object' || !Array.isArray(s.attempts) || typeof s.settings !== 'object') throw new Error('missing fields')
-  return { ...emptyState(), ...s, settings: { ...emptyState().settings, ...s.settings } } as AppState
+  const empty = emptyState()
+  return { ...empty, ...s, settings: { ...empty.settings, ...s.settings }, reading: { ...empty.reading, ...s.reading } } as AppState
 }
 
 /**

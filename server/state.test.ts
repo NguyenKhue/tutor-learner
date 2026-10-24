@@ -14,7 +14,8 @@ afterEach(() => fs.rmSync(dir, { recursive: true, force: true }))
 
 test('starts empty when no file', async () => {
   expect(await createStateStore(file).read()).toEqual(emptyState())
-  expect(emptyState().settings).toEqual({ newPerDay: 3, englishFeedback: true })
+  expect(emptyState().settings).toEqual({ newPerDay: 3, englishFeedback: true, readingReviewsPerDay: 3 })
+  expect(emptyState().reading).toEqual({ catalog: {}, quizzes: {}, progress: {} })
 })
 
 test('persists updates across stores', async () => {
@@ -58,4 +59,11 @@ test('runs updates one at a time', async () => {
     ),
   )
   expect((await createStateStore(file).read()).attempts.length).toBe(10)
+})
+
+test('an older state file gets reading defaults', async () => {
+  fs.writeFileSync(file, JSON.stringify({ version: 1, banks: {}, attempts: [], today: null, settings: { newPerDay: 4, englishFeedback: false } }))
+  const s = await createStateStore(file).read()
+  expect(s.settings).toEqual({ newPerDay: 4, englishFeedback: false, readingReviewsPerDay: 3 })
+  expect(s.reading).toEqual({ catalog: {}, quizzes: {}, progress: {} })
 })

@@ -19,7 +19,7 @@ export function makeOverview(over: Partial<Overview> = {}): Overview {
     },
     topicOrder: [],
     list: { date: '2026-10-22', review: [], fresh: [], extra: [] },
-    settings: { newPerDay: 3, englishFeedback: true },
+    settings: { newPerDay: 3, englishFeedback: true, readingReviewsPerDay: 3 },
     vaultName: 'Khue Vault',
     ...over,
   }

@@ -21,7 +21,23 @@ export type AttemptState = 'pending' | 'graded' | 'recorded' | 'failed'
 export interface Attempt { id: string; point: string; q: string; kind: 'learn' | 'review'; answer: string; date: string
   state: AttemptState; grade?: Grade; english?: EnglishNotes; appealed?: boolean; appeal?: string; recordingStarted?: boolean
   record?: RecordResult; error?: { code: 'limit' | 'auth' | 'failed' | 'record'; message: string } }
-export interface TodayList { date: string; review: string[]; fresh: string[]; extra: string[] }
-export interface Settings { newPerDay: number; englishFeedback: boolean }
-export interface AppState { version: 1; banks: Record<string, QuestionBank>; attempts: Attempt[]; today: TodayList | null; settings: Settings }
-export interface Overview { today: string; export: ExportData; topicOrder: string[]; list: TodayList; settings: Settings; vaultName: string }
+export interface TodayList { date: string; review: string[]; fresh: string[]; extra: string[]; reading?: string[] }
+export interface Settings { newPerDay: number; englishFeedback: boolean; readingReviewsPerDay: number }
+export interface AppState { version: 1; banks: Record<string, QuestionBank>; attempts: Attempt[]; today: TodayList | null; settings: Settings; reading: ReadingState }
+export interface Overview { today: string; export: ExportData; topicOrder: string[]; list: TodayList; settings: Settings; vaultName: string
+  reading?: Record<string, { title: string; topic: string | null; done: boolean; kind: 'recheck' | 'reread' }> }
+
+// Reading tab
+export type ReadingPriority = 'high' | 'medium' | 'low' | 'skip'
+export interface CatalogEntry { path: string; title: string; chars: number; mtime: number; hash: string
+  topic?: string | null; priority?: ReadingPriority; minutes?: number; why?: string; classifiedHash?: string; isSource: boolean; present: boolean }
+export interface ReadingQuiz { hash: string; questions: Question[] }          // kind 'open', q r1..r3
+export interface ReadingResult { q: string; ok: boolean; why: string; missing: string[]; feedback: string }
+export interface ReadingCheck { id: string; date: string; kind: 'first' | 'recheck'; quizHash: string; answers: Record<string, string>
+  state: 'pending' | 'graded'; results?: ReadingResult[]; english?: Record<string, EnglishNotes>; passed?: boolean
+  appealed?: boolean; appeal?: string; error?: { code: 'limit' | 'auth' | 'failed'; message: string } }
+export interface ReadingProgress { skipped?: boolean; checks: ReadingCheck[] }
+export type ReadingStatus = 'unread' | 'understood' | 'reread' | 'done'
+export interface ReadingState { catalog: Record<string, CatalogEntry>; quizzes: Record<string, ReadingQuiz>; progress: Record<string, ReadingProgress> }
+export interface ReadingItem extends CatalogEntry { status: ReadingStatus; skipped: boolean; nextCheck: string | null; rung: number; openCheck: ReadingCheck | null }
+export interface ReadingOverview { items: ReadingItem[]; upNext: string[]; due: string[]; classify: { total: number; done: number; running: boolean; error: string | null } }
