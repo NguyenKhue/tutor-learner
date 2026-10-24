@@ -7,7 +7,7 @@ type Block =
   | { k: 'h'; level: number; text: string }
   | { k: 'ul' | 'ol'; items: string[] }
   | { k: 'p'; text: string }
-  | { k: 'quote'; text: string }
+  | { k: 'quote'; blocks: Block[] }
   | { k: 'table'; rows: string[][] }
 
 /** The inline spans this renderer knows: inline code, image embeds, wikilinks, bold, italic and links. */
@@ -59,10 +59,13 @@ function parseBlocks(src: string): Block[] {
       flush()
       const quote: string[] = []
       while (i < lines.length && lines[i].startsWith('>')) {
-        quote.push(lines[i].replace(/^>\s?/, '').replace(/^\[![^\]]+\][+-]?\s*/, ''))
+        quote.push(lines[i].replace(/^>\s?/, ''))
         i++
       }
-      out.push({ k: 'quote', text: quote.filter((q) => q.trim()).join(' ') })
+      // an Obsidian callout header "[!info] Title" keeps only its title, as the first paragraph
+      if (quote.length > 0) quote[0] = quote[0].replace(/^\[![^\]]+\][+-]?\s*/, '')
+      if (quote.length > 0 && quote[0].trim() && quote.length > 1) quote.splice(1, 0, '')
+      out.push({ k: 'quote', blocks: parseBlocks(quote.join('\n')) })
       continue
     }
     const head = line.match(/^(#{1,6})\s+(.*)$/)
@@ -167,7 +170,7 @@ function block(b: Block, key: number, links: MarkdownLinks): ReactNode {
     case 'p':
       return <p key={key}>{inline_(b.text)}</p>
     case 'quote':
-      return <blockquote key={key}>{inline_(b.text)}</blockquote>
+      return <blockquote key={key}>{b.blocks.map((inner, i) => block(inner, i, links))}</blockquote>
     case 'table':
       return (
         <div className="table-wrap" key={key}>
