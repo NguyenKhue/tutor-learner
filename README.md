@@ -44,6 +44,12 @@ Topics and points are created in the terminal with the Claude Code `tutor` skill
   button gives one regrade with your argument. Each answer adds exactly one line to the point's `history`.
 - **Nothing is lost:** your answer is saved before grading. If Claude times out or hits the usage limit, or the server
   restarts, the answer stays and the Study page offers "Grade again".
+- **Reading:** a reading list built from the rest of your vault. Each note is classified once by Claude (about 10 notes
+  per call) under a Roadmap topic, with a priority, a reading time and a one-line reason. "Up next" suggests 3 notes
+  from the topics you are studying today first. Read the note on the page (images from the vault included), then
+  answer 3 short questions. Passing 2 of 3 schedules a recheck after 7 days, then after 21 days, then the note is done.
+  Failing asks for a reread in 2 days. Due notes show up in Today under "Reading review" (3 a day by default). Reading
+  never writes to the vault: its data lives in `state.json`.
 - **Topics, Point, Progress, Settings:** status per topic, a point's history and past answers, a heatmap, a 14-day
   due forecast and the pace needed before the interview.
 
@@ -124,6 +130,7 @@ Tests never touch the real vault and never call the real `claude`.
 | `server/prompts.ts` | prompts and JSON schemas for lessons, question banks and grading |
 | `server/study.ts` | the study flow: lessons, banks, answers, grading, recording, prefetch |
 | `server/vault.ts`, `server/roadmap.ts` | wikilinks, point text, lesson files, `topic_order` |
+| `server/reading/` | Reading tab: catalog scan, classification and quiz prompts, service, vault images |
 | `server/state.ts`, `server/backups.ts` | `state.json` (atomic writes) and daily backups |
 | `server/api.ts`, `server/plugin.ts`, `server/main.ts` | `/api/*`, the Vite plugin (dev), the stable server |
 | `src/lib/` | Today list, stats, dates, shared types |
