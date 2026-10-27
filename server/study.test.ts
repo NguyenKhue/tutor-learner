@@ -379,3 +379,10 @@ test('a record that reached the vault before a crash is not written twice', asyn
   expect(r.state).toBe('recorded')
   expect(await s.history(CONCEPT)).toHaveLength(1)
 })
+
+test('mcq grade gives the correct option as the sample answer', async () => {
+  const s = setup()
+  await s.service.getBank(MEMORY)
+  const a = await s.service.submit({ point: MEMORY, q: 'q2', kind: 'learn', answer: '2' })
+  expect(a.grade!.sample).toBe('B. r')
+})

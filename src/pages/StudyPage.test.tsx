@@ -233,3 +233,23 @@ test('a pending attempt without an error can be graded again', async () => {
   expect(await screen.findByText('Correct')).toBeInTheDocument()
   expect(calls.find((c) => c.path === '/api/attempt/retry')!.body).toEqual({ id: 'a1' })
 })
+
+test('shows the sample answer after grading', async () => {
+  mockApi(routes(open, { 'POST /api/answer': attempt({ grade: { ok: false, why: 'misses b', missing: ['b'], feedback: 'Add b.', sample: 'A strong answer says a and b.' }, state: 'graded', record: undefined }) }))
+  goTo(URL_REVIEW)
+  render(<App />)
+  await userEvent.type(await screen.findByRole('textbox'), 'x')
+  await userEvent.click(screen.getByRole('button', { name: 'Submit' }))
+  const region = await screen.findByRole('region', { name: 'Sample answer' })
+  expect(region).toHaveTextContent('A strong answer says a and b.')
+})
+
+test('no sample section when the grade has none', async () => {
+  mockApi(routes(open))
+  goTo(URL_REVIEW)
+  render(<App />)
+  await userEvent.type(await screen.findByRole('textbox'), 'x')
+  await userEvent.click(screen.getByRole('button', { name: 'Submit' }))
+  await screen.findByText('Correct')
+  expect(screen.queryByRole('region', { name: 'Sample answer' })).toBeNull()
+})

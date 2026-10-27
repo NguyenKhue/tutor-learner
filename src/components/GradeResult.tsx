@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Attempt } from '../lib/types'
 import { EnglishFeedback } from './EnglishFeedback'
+import { SampleAnswer } from './SampleAnswer'
 
 /** The fixed message shown for each failing attempt error code. */
 const ERROR_TEXT: Record<'limit' | 'auth' | 'failed' | 'record', string> = {
@@ -48,6 +49,7 @@ export function GradeResult({ attempt, busy = false, onContinue, onRetry, onAppe
             </div>
           )}
           <p className="grade-feedback">{attempt.grade.feedback}</p>
+          <SampleAnswer text={attempt.grade.sample} />
         </>
       )}
 

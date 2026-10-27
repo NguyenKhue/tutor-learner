@@ -301,3 +301,5 @@ td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .ok-line { color: var(--good); margin: 4px 0; }
 .no-line { color: var(--again); margin: 4px 0; }
 section + section { margin-top: 28px; }
+.sample { margin-top: 10px; padding: 12px 14px; border-radius: 10px; background: var(--accent-soft); border: 1px solid var(--accent-line); display: grid; gap: 6px; }
+.sample .md { font-size: 14.5px; }

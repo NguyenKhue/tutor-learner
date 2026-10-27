@@ -87,3 +87,9 @@ test('validateBank rejects a concept bank that uses mcq', () => {
 test('validateBank rejects a bank without exactly one pretest', () => {
   expect(() => validateBank('concept', { questions: [open('b'), open('c'), open('d')] }, [])).toThrow(ClaudeError)
 })
+
+test('grade asks for a sample answer', () => {
+  expect((GRADE_SCHEMA.properties.grade as { required: string[] }).required).toContain('sample')
+  const p = buildGradePrompt({ ...ctx(), question: open('q1'), answer: 'x', english: false })
+  expect(p).toContain('sample = ')
+})

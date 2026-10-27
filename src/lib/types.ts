@@ -15,7 +15,7 @@ export interface Question { q: string; kind: QuestionKind; prompt: string
   criteria?: string[] }                                              // open: 2-4 required ideas; pretest: 1-3 key ideas
 export interface QuestionBank { point: string; created: string; questions: Question[] }
 
-export interface Grade { ok: boolean; why: string; missing: string[]; feedback: string }
+export interface Grade { ok: boolean; why: string; missing: string[]; feedback: string; sample?: string }
 export interface EnglishNotes { corrected: string; notes: string[] }
 export type AttemptState = 'pending' | 'graded' | 'recorded' | 'failed'
 export interface Attempt { id: string; point: string; q: string; kind: 'learn' | 'review'; answer: string; date: string
@@ -32,7 +32,7 @@ export type ReadingPriority = 'high' | 'medium' | 'low' | 'skip'
 export interface CatalogEntry { path: string; title: string; chars: number; mtime: number; hash: string
   topic?: string | null; priority?: ReadingPriority; minutes?: number; why?: string; classifiedHash?: string; isSource: boolean; present: boolean }
 export interface ReadingQuiz { hash: string; questions: Question[] }          // kind 'open', q r1..r3
-export interface ReadingResult { q: string; ok: boolean; why: string; missing: string[]; feedback: string }
+export interface ReadingResult { q: string; ok: boolean; why: string; missing: string[]; feedback: string; sample?: string }
 export interface ReadingCheck { id: string; date: string; kind: 'first' | 'recheck'; quizHash: string; answers: Record<string, string>
   state: 'pending' | 'graded'; results?: ReadingResult[]; english?: Record<string, EnglishNotes>; passed?: boolean
   appealed?: boolean; appeal?: string; error?: { code: 'limit' | 'auth' | 'failed'; message: string } }

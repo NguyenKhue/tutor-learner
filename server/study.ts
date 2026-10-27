@@ -271,6 +271,7 @@ export function createStudyService(deps: StudyDeps): StudyService {
       why: `Chose option ${letter(chosen)}; correct is ${letter(correct)}`,
       missing: [],
       feedback: ok ? 'Correct.' : question.misconceptions?.[chosen] || 'That option is not correct.',
+      sample: `${letter(correct)}. ${question.options?.[correct] ?? ''}`,
     }
   }
 

@@ -55,8 +55,9 @@ export const GRADE_SCHEMA = {
         why: { type: 'string' },
         missing: { type: 'array', items: { type: 'string' } },
         feedback: { type: 'string' },
+        sample: { type: 'string' },
       },
-      required: ['ok', 'why', 'missing', 'feedback'],
+      required: ['ok', 'why', 'missing', 'feedback', 'sample'],
     },
     english: {
       anyOf: [
@@ -178,6 +179,7 @@ export function buildGradePrompt(
     '- why = ONE short line stating the reason for the verdict.',
     '- missing = the criteria that the answer does not cover. Use [] when ok is true.',
     '- feedback = 2-4 short sentences in simple English. Explain the mistake, or say what to add.',
+    '- sample = a model answer Khue can learn from: how a strong candidate would answer this question in an interview, using only the source notes and covering every criterion. 4-8 short sentences in simple English, correct technical terms, a tiny code snippet only if it helps. Write it even when the answer is correct.',
     '',
   )
 

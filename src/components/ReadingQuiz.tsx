@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api, ApiError } from '../api/client'
 import type { ReadingCheck, ReadingQuiz as Quiz } from '../lib/types'
+import { SampleAnswer } from './SampleAnswer'
 
 const ERROR_TEXT: Record<string, string> = {
   limit: 'Claude usage limit reached. Your answers are saved. Try again later.',
@@ -93,6 +94,7 @@ export function ReadingQuiz({ path, quiz, initial, onGraded }: { path: string; q
                   </ul>
                 )}
                 <p className="grade-feedback">{r.feedback}</p>
+                <SampleAnswer text={r.sample} />
               </>
             )}
             {english && (

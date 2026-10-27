@@ -35,3 +35,13 @@ test('validateReadingGrade matches results to questions', () => {
   expect(r.map((x) => [x.q, x.ok])).toEqual([['r1', true], ['r2', false], ['r3', true]])
   expect(() => validateReadingGrade({ results: [] }, qs)).toThrow(ClaudeError)
 })
+
+test('reading grade asks for and keeps a sample answer', async () => {
+  const { READING_GRADE_SCHEMA } = await import('./prompts')
+  const item = READING_GRADE_SCHEMA.properties.results.items as { required: string[] }
+  expect(item.required).toContain('sample')
+  const qs = validateReadingQuiz({ questions: [open('a'), open('b'), open('c')] })
+  expect(buildReadingGradePrompt({ title: 'T', text: 'N', questions: qs, answers: {}, english: false })).toContain('sample = ')
+  const r = validateReadingGrade({ results: ['r1', 'r2', 'r3'].map((q) => ({ q, ok: true, why: '', missing: [], feedback: '', sample: `S ${q}` })) }, qs)
+  expect(r[1].sample).toBe('S r2')
+})

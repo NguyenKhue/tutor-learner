@@ -55,8 +55,9 @@ export const READING_GRADE_SCHEMA = {
           why: { type: 'string' },
           missing: { type: 'array', items: { type: 'string' } },
           feedback: { type: 'string' },
+          sample: { type: 'string' },
         },
-        required: ['q', 'ok', 'why', 'missing', 'feedback'],
+        required: ['q', 'ok', 'why', 'missing', 'feedback', 'sample'],
       },
     },
     english: {
@@ -142,6 +143,7 @@ export function buildReadingGradePrompt(a: {
     `Grade Khue's answers about the note "${a.title}". Judge ONLY against each question's criteria and the note.`,
     '- ok = true only if the answer covers every criterion correctly (wording may differ; the answer may be in Vietnamese or English).',
     '- why: one short line with the reason. missing: the criteria not covered (empty when ok). feedback: 2-4 short sentences in simple English.',
+    '- sample = a model answer to learn from: how a strong candidate would answer, using only the note and covering every criterion. 3-6 short sentences in simple English. Write it even when the answer is correct.',
     '- Return one result per question, with its code.',
   ]
   if (a.english) {
@@ -185,6 +187,13 @@ export function validateReadingGrade(raw: { results?: ReadingResult[] }, questio
   return questions.map((q, i) => {
     const r = results.find((x) => x.q === q.q) ?? results[i]
     if (!r || typeof r.ok !== 'boolean') throw new ClaudeError('failed', `no grade for ${q.q}`)
-    return { q: q.q, ok: r.ok, why: r.why ?? '', missing: Array.isArray(r.missing) ? r.missing : [], feedback: r.feedback ?? '' }
+    return {
+      q: q.q,
+      ok: r.ok,
+      why: r.why ?? '',
+      missing: Array.isArray(r.missing) ? r.missing : [],
+      feedback: r.feedback ?? '',
+      ...(typeof r.sample === 'string' && r.sample.trim() ? { sample: r.sample.trim() } : {}),
+    }
   })
 }

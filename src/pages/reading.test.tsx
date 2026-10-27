@@ -200,3 +200,17 @@ test('settings saves reading reviews per day', async () => {
   await screen.findByText('Saved')
   expect(calls.find((c) => c.method === 'POST')!.body).toEqual({ newPerDay: 3, englishFeedback: true, readingReviewsPerDay: 0 })
 })
+
+test('reading result shows a sample answer per question', async () => {
+  const withSample = graded({ results: ['r1', 'r2', 'r3'].map((q) => ({ q, ok: true, why: 'w', missing: [], feedback: 'f', sample: `Model ${q}` })) })
+  mockApi(base({ 'POST /api/reading/check': withSample }))
+  goTo(`/read/${enc(A)}`)
+  render(<App />)
+  await userEvent.click(await screen.findByRole('button', { name: "I've read it" }))
+  for (const q of ['r1', 'r2', 'r3']) await userEvent.type(await screen.findByRole('textbox', { name: `Question ${q}?` }), 'x')
+  await userEvent.click(screen.getByRole('button', { name: 'Submit' }))
+  await screen.findByText('Passed')
+  const samples = screen.getAllByRole('region', { name: 'Sample answer' })
+  expect(samples).toHaveLength(3)
+  expect(samples[1]).toHaveTextContent('Model r2')
+})
