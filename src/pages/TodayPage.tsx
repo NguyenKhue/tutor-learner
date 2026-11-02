@@ -4,121 +4,38 @@ import { api } from '../api/client'
 import { useHotkey } from '../hooks/useHotkey'
 import { useTutorData } from '../hooks/useTutorData'
 import { daysBetween } from '../lib/day'
-import { pointTitle } from '../lib/format'
 import { streak } from '../lib/stats'
-import { itemDone } from '../lib/today'
-import type { Point, TodayList } from '../lib/types'
+import { todayRows, type TodayRow } from '../lib/today'
+import type { TodayList } from '../lib/types'
+import { Skeleton } from '../components/Loading'
 
-type Kind = 'review' | 'learn'
-
-/** What one card of today's list needs to render. */
-interface Row {
-  id: string
-  href: string
-  kind: Kind
-  done: boolean
-  point: Point | undefined
-  /** Set for a note in "Reading review": its title, topic and whether it is a reread. */
-  note?: { title: string; topic: string | null; reread: boolean }
-}
-
-/** A friendly date like `Thursday, October 22` for a YYYY-MM-DD string. */
-const longDay = (date: string) =>
-  new Date(`${date}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' })
-
-/** One card of today's list. */
-function Item({ row }: { row: Row }) {
-  const { point } = row
+/** One item waiting after the next one, or already done. */
+function QueueItem({ row }: { row: TodayRow }) {
   return (
-    <li className={`card${row.done ? ' done' : ''}`}>
-      <div className="head">
-        <h3 className="title">
-          <Link to={row.href}>{row.note ? row.note.title : pointTitle(row.id)}</Link>
-        </h3>
-        {row.done && (
-          <span className="check" aria-label="Done">
-            ✓
-          </span>
-        )}
-      </div>
-      <div className="meta">
-        {row.note?.topic && <span>{row.note.topic}</span>}
-        {row.note && <span className="tag">{row.note.reread ? 'read again' : 'recheck'}</span>}
-        {point && <span>{point.topic}</span>}
-        {point && <span className="tag">{point.type}</span>}
-        {point?.interview && <span className="tag interview">interview</span>}
-      </div>
+    <li className={row.done ? 'queue-item done' : 'queue-item'}>
+      {row.done ? <span className="check" aria-label="Done">✓</span> : <span className="queue-dot" aria-hidden="true" />}
+      <Link to={row.href}>{row.title}</Link>
+      <span className="hint">{row.label}</span>
     </li>
   )
 }
 
-/** One named accessible region of today's list (Review / New / Extra). */
-function Section({ name, rows }: { name: string; rows: Row[] }) {
-  const id = `${name.replace(/\s+/g, '-').toLowerCase()}-h`
-  return (
-    <section aria-labelledby={id}>
-      <h2 id={id}>{name}</h2>
-      <ul className="list">
-        {rows.map((row) => (
-          <Item key={row.id} row={row} />
-        ))}
-      </ul>
-    </section>
-  )
-}
-
-/** Today: hero with countdown and progress, then Review / New / Extra sections. */
+/** Today: the one next thing to do with a Start button, how the day is going, then the rest of the list. */
 export function TodayPage() {
   const { data, error, setList } = useTutorData()
   const navigate = useNavigate()
   const [pending, setPending] = useState(false)
 
-  const { review, fresh, extra, reading } = useMemo(() => {
-    if (!data) return { review: [], fresh: [], extra: [], reading: [] }
-    const byId = new Map(data.export.points.map((p) => [p.id, p]))
-    const rowOf = (id: string, kind: Kind): Row => {
-      const point = byId.get(id)
-      return {
-        id,
-        href: `/study/${encodeURIComponent(id)}?kind=${kind}`,
-        kind,
-        point,
-        done: !!point && itemDone(point, data.today),
-      }
-    }
-    const review = data.list.review.map((id) => rowOf(id, 'review'))
-    const fresh = data.list.fresh.map((id) => rowOf(id, 'learn'))
-    const extra = data.list.extra.map((id) => {
-      const point = byId.get(id)
-      const due = !!point?.next_review && point.next_review <= data.today
-      return rowOf(id, due ? 'review' : 'learn')
-    })
-    const reading: Row[] = (data.list.reading ?? []).map((path) => {
-      const info = data.reading?.[path]
-      return {
-        id: path,
-        href: `/read/${encodeURIComponent(path)}`,
-        kind: 'review',
-        point: undefined,
-        done: !!info?.done,
-        note: { title: info?.title ?? path, topic: info?.topic ?? null, reread: info?.kind === 'reread' },
-      }
-    })
-    return { review, fresh, extra, reading }
-  }, [data])
-
-  const rows = useMemo(() => [...review, ...fresh, ...extra, ...reading], [review, fresh, extra, reading])
-
+  const rows = useMemo(() => (data ? todayRows(data) : []), [data])
+  const next = rows.find((r) => !r.done)
   const done = rows.filter((r) => r.done).length
   const total = rows.length
   const interviewDays = data?.export.config.interview_date ? daysBetween(data.today, data.export.config.interview_date) : null
+  const days = data ? streak(data.export.points, data.today) : 0
 
-  /** Opens the first not-done item of today's list. */
-  const openFirst = () => {
-    const first = rows.find((r) => !r.done)
-    if (first) navigate(first.href)
-  }
-  useHotkey('n', openFirst)
+  useHotkey('n', () => {
+    if (next) navigate(next.href)
+  })
 
   /** Asks the server for one more point and swaps today's list for the new copy. */
   const addExtra = async () => {
@@ -132,43 +49,46 @@ export function TodayPage() {
 
   if (!data) {
     if (error) return <pre className="error-box">{`Could not load: ${error.message}`}</pre>
-    return <p className="hint">Loading…</p>
+    return <Skeleton />
   }
 
   return (
-    <div>
-      <div className="hero">
-        <div>
-          <div className="eyebrow">{longDay(data.today)}</div>
-          <h1>
-            {interviewDays === null ? (
-              'Your study day'
-            ) : (
-              <span className="countdown">{interviewDays} days to interview</span>
-            )}
-          </h1>
-          <span className="streak-chip">{`${streak(data.export.points, data.today)}-day streak`}</span>
-        </div>
-        {total > 0 && (
-          <div className="progress" aria-label="Today's progress">
-            <div className="segs">
-              {rows.map((r, i) => (
-                <i key={r.id} className={i < done ? 'on' : ''} />
-              ))}
-            </div>
-            <div className="mono">{`${done} / ${total}`} done</div>
-          </div>
-        )}
-      </div>
+    <div className="today">
+      {next ? (
+        <section className="card next" aria-labelledby="next-h">
+          <div className="eyebrow">{`Next · ${next.label}`}</div>
+          <h1 id="next-h">{next.title}</h1>
+          {next.topic && <p className="next-topic">{next.topic}</p>}
+          <Link className="btn primary wide" to={next.href}>Start</Link>
+        </section>
+      ) : (
+        <section className="card next" aria-labelledby="next-h">
+          <div className="eyebrow">Today</div>
+          <h1 id="next-h">{total > 0 ? 'All done for today' : 'Nothing left today.'}</h1>
+          <p className="next-topic">Add one more point if you still have time.</p>
+        </section>
+      )}
 
-      {review.length > 0 && <Section name="Review" rows={review} />}
-      {fresh.length > 0 && <Section name="New" rows={fresh} />}
-      {extra.length > 0 && <Section name="Extra" rows={extra} />}
-      {reading.length > 0 && <Section name="Reading review" rows={reading} />}
-      {total === 0 && <p className="hint">Nothing left today.</p>}
+      {total > 0 && (
+        <div className="day-status" aria-label="Today's progress">
+          <div className="row spread">
+            <span>{`${done} of ${total} done today`}</span>
+            {interviewDays !== null && <span>{`${interviewDays} days to interview`}</span>}
+          </div>
+          <div className="bar"><i style={{ width: `${Math.round((done / total) * 100)}%` }} /></div>
+        </div>
+      )}
+      {total === 0 && interviewDays !== null && <p className="hint">{`${interviewDays} days to interview`}</p>}
+      {days > 0 && <p className="streak-chip">{`${days}-day streak`}</p>}
+
+      {rows.length > (next ? 1 : 0) && (
+        <ul className="queue" aria-label="Today's list">
+          {rows.filter((r) => r !== next).map((r) => <QueueItem key={r.id} row={r} />)}
+        </ul>
+      )}
 
       <div className="foot">
-        <button type="button" className="btn" disabled={pending} onClick={() => void addExtra()}>
+        <button type="button" className={next ? 'btn ghost' : 'btn primary'} disabled={pending} onClick={() => void addExtra()}>
           Study one more
         </button>
       </div>

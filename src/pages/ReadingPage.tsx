@@ -3,40 +3,53 @@ import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import { useReading } from '../hooks/useReading'
 import type { ReadingItem, ReadingOverview } from '../lib/types'
+import { Skeleton } from '../components/Loading'
 
 const readHref = (path: string) => `/read/${encodeURIComponent(path)}`
 
-/** One suggested or due note. */
-function NoteCard({ item, onSkip }: { item: ReadingItem; onSkip?: () => void }) {
+/** The note to read next, with a clear way in. */
+function NextNote({ item, onSkip }: { item: ReadingItem; onSkip(): void }) {
   return (
-    <li className="card">
-      <div className="head">
-        <h3 className="title">
-          <Link to={readHref(item.path)}>{item.title}</Link>
-        </h3>
-        {onSkip && (
-          <button type="button" className="btn small" onClick={onSkip}>
-            Skip
-          </button>
-        )}
-      </div>
+    <div className="card next">
+      <h3 className="title"><Link to={readHref(item.path)}>{item.title}</Link></h3>
       <div className="meta">
+        {item.minutes && <span>{`~${item.minutes} min`}</span>}
         {item.topic && <span>{item.topic}</span>}
-        {item.minutes && <span className="mono">{`~${item.minutes} min`}</span>}
-        {item.priority && <span className="tag">{item.priority}</span>}
-        {item.status === 'reread' && <span className="tag">read again</span>}
       </div>
-      {item.why && <p className="hint">{item.why}</p>}
+      {item.why && <p className="next-why">{item.why}</p>}
+      <div className="row spread">
+        <Link className="btn primary" to={readHref(item.path)} aria-label={`Read ${item.title}`}>Read</Link>
+        <button type="button" className="btn ghost" onClick={onSkip}>Skip</button>
+      </div>
+    </div>
+  )
+}
+
+/** One more note in a short list. */
+function NoteRow({ item }: { item: ReadingItem }) {
+  return (
+    <li className="queue-item">
+      <Link to={readHref(item.path)}>{item.title}</Link>
+      <span className="hint">{item.status === 'reread' ? 'Read again' : item.minutes ? `~${item.minutes} min` : ''}</span>
     </li>
   )
 }
 
-function Region({ name, children }: { name: string; children: React.ReactNode }) {
+function Region({ name, children, collapsed = false }: { name: string; children: React.ReactNode; collapsed?: boolean }) {
   const id = `${name.replace(/\s+/g, '-').toLowerCase()}-h`
   return (
     <section aria-labelledby={id}>
-      <h2 id={id}>{name}</h2>
-      {children}
+      {collapsed ? (
+        <details className="more">
+          <summary id={id}>{name}</summary>
+          {children}
+        </details>
+      ) : (
+        <>
+          <h2 id={id}>{name}</h2>
+          {children}
+        </>
+      )}
     </section>
   )
 }
@@ -47,7 +60,7 @@ export function ReadingPage() {
   const [topic, setTopic] = useState('')
   const byPath = useMemo(() => new Map((data?.items ?? []).map((i) => [i.path, i])), [data])
 
-  if (!data) return error ? <pre className="error-box">{`Could not load: ${error}`}</pre> : <p className="hint">Loading…</p>
+  if (!data) return error ? <pre className="error-box">{`Could not load: ${error}`}</pre> : <Skeleton />
 
   const skip = async (path: string) => {
     await api.post('/api/reading/skip', { path, skipped: true })
@@ -69,15 +82,20 @@ export function ReadingPage() {
   const browse = present.filter((i) => (topic === '' ? true : topic === '(none)' ? !i.topic : i.topic === topic))
   const { total, done, running, error: classifyError } = data.classify
 
+  const suggested = data.upNext.map((p) => byPath.get(p)).filter((i): i is ReadingItem => !!i)
+  const due = data.due.map((p) => byPath.get(p)).filter((i): i is ReadingItem => !!i)
+
   return (
     <>
       <header className="page-head">
         <h1>Reading</h1>
-        <p>Your own notes, in an order that follows what you are studying.</p>
-        <p className="hint">
-          {running ? `Classifying… ${done} / ${total}` : `Classified ${done} / ${total}`}
-          {classifyError && ` — stopped: ${classifyError}`}
-        </p>
+        <p>Your notes, in the order that helps most.</p>
+        {(done < total || running || classifyError) && (
+          <p className="hint">
+            {running ? `Classifying… ${done} / ${total}` : `Classified ${done} / ${total}`}
+            {classifyError && ` — stopped: ${classifyError}`}
+          </p>
+        )}
         {done === 0 && !running && (
           <button type="button" className="btn primary" onClick={() => void classify()}>
             Build reading list
@@ -90,29 +108,30 @@ export function ReadingPage() {
         )}
       </header>
 
-      <Region name="Up next">
-        {data.upNext.length === 0 ? (
-          <p className="hint">Nothing to suggest yet.</p>
-        ) : (
-          <ul className="list">
-            {data.upNext.map((p) => byPath.get(p)).filter((i): i is ReadingItem => !!i).map((i) => (
-              <NoteCard key={i.path} item={i} onSkip={() => void skip(i.path)} />
-            ))}
-          </ul>
-        )}
-      </Region>
-
-      {data.due.length > 0 && (
+      {due.length > 0 && (
         <Region name="Due for recheck">
-          <ul className="list">
-            {data.due.map((p) => byPath.get(p)).filter((i): i is ReadingItem => !!i).map((i) => (
-              <NoteCard key={i.path} item={i} />
-            ))}
+          <ul className="queue">
+            {due.map((i) => <NoteRow key={i.path} item={i} />)}
           </ul>
         </Region>
       )}
 
-      <Region name="Progress by topic">
+      <Region name="Up next">
+        {suggested.length === 0 ? (
+          <p className="hint">Nothing to suggest yet.</p>
+        ) : (
+          <>
+            <NextNote item={suggested[0]} onSkip={() => void skip(suggested[0].path)} />
+            {suggested.length > 1 && (
+              <ul className="queue">
+                {suggested.slice(1).map((i) => <NoteRow key={i.path} item={i} />)}
+              </ul>
+            )}
+          </>
+        )}
+      </Region>
+
+      <Region name="Progress by topic" collapsed>
         <div className="table-wrap">
           <table>
             <thead>
@@ -127,7 +146,7 @@ export function ReadingPage() {
         </div>
       </Region>
 
-      <Region name="Browse">
+      <Region name="All notes" collapsed>
         <label htmlFor="browse-topic">Topic</label>{' '}
         <select id="browse-topic" value={topic} onChange={(e) => setTopic(e.target.value)}>
           <option value="">All notes</option>

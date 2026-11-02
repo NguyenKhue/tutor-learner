@@ -28,14 +28,16 @@ function overview() {
   })
 }
 
-test('topics page shows counts', async () => {
+test('topics page shows how far each topic is and the next step', async () => {
   mockApi({ 'GET /api/overview': overview() })
   goTo('/topics')
   render(<App />)
-  const rows = await screen.findAllByRole('row')
-  const kotlin = rows.find((r) => r.textContent?.includes('Kotlin Language'))!
-  expect(within(kotlin).getByText('2')).toBeInTheDocument()
-  expect(rows.findIndex((r) => r.textContent?.includes('Kotlin Language'))).toBeLessThan(rows.findIndex((r) => r.textContent?.includes('Coroutines and Flow')))
+  expect(await screen.findByText('1 of 2 started · 0 mastered')).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'Continue Kotlin Language' })).toHaveAttribute('href', `/study/${encodeURIComponent(P1)}?kind=learn`)
+  expect(screen.getByRole('link', { name: 'Kotlin Language' })).toHaveAttribute('href', `/topics/${encodeURIComponent('Kotlin Language')}`)
+  expect(screen.getByText('Done')).toBeInTheDocument()
+  const names = screen.getAllByRole('listitem').map((r) => r.textContent ?? '')
+  expect(names.findIndex((n) => n.includes('Kotlin Language'))).toBeLessThan(names.findIndex((n) => n.includes('Coroutines and Flow')))
 })
 
 test('topic page lists its points with links', async () => {
@@ -61,13 +63,35 @@ test('point page shows history', async () => {
   expect(screen.getByRole('link', { name: '[[Books/Kotlin/Null]]' })).toHaveAttribute('href', 'obsidian://open?vault=Khue%20Vault&file=Books%2FKotlin%2FNull')
 })
 
-test('progress page shows streak, mastered count and pace', async () => {
+test('progress page says whether the pace is enough', async () => {
   mockApi({ 'GET /api/overview': overview() })
   goTo('/progress')
   render(<App />)
-  expect(await screen.findByText('1 / 3 mastered')).toBeInTheDocument()
-  expect(screen.getByText('2-day streak')).toBeInTheDocument()
-  expect(screen.getByText(/About 1 new points? a day/)).toBeInTheDocument()
+  expect(await screen.findByText('1 / 3')).toBeInTheDocument()
+  expect(screen.getByText('mastered')).toBeInTheDocument()
+  expect(screen.getByText('day streak')).toBeInTheDocument()
+  expect(screen.getByText('On track')).toBeInTheDocument()
+  expect(screen.getByText(/You plan 3 new points a day\. You need about 1/)).toBeInTheDocument()
+  expect(screen.queryByRole('link', { name: 'Change daily goal' })).toBeNull()
+})
+
+test('behind pace offers to change the daily goal', async () => {
+  const many = Array.from({ length: 300 }, (_, i) => makePoint(`Kotlin Language/${i}`))
+  mockApi({ 'GET /api/overview': makeOverview({ export: { ...makeOverview().export, points: many } }) })
+  goTo('/progress')
+  render(<App />)
+  expect(await screen.findByText('Behind pace')).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'Change daily goal' })).toHaveAttribute('href', '/settings')
+})
+
+test('settings changes the theme', async () => {
+  mockApi({ 'GET /api/overview': overview(), 'GET /api/health': { claude: { lastError: null }, vault: true } })
+  goTo('/settings')
+  render(<App />)
+  await userEvent.click(await screen.findByRole('button', { name: 'Dark' }))
+  expect(document.documentElement.dataset.theme).toBe('dark')
+  await userEvent.click(screen.getByRole('button', { name: 'System' }))
+  expect(document.documentElement.dataset.theme).toBeUndefined()
 })
 
 test('today shows the streak', async () => {

@@ -1,37 +1,41 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
 import { AnswerBox } from '../components/AnswerBox'
 import { GradeResult } from '../components/GradeResult'
 import { LessonView } from '../components/LessonView'
 import { McqOptions } from '../components/McqOptions'
-import { SpeakingAnswer } from '../components/SpeakingAnswer'
-import { canRecord } from '../hooks/useRecorder'
 import { useHotkey } from '../hooks/useHotkey'
 import { useTutorData } from '../hooks/useTutorData'
 import { pointTitle } from '../lib/format'
-import { itemDone } from '../lib/today'
-import type { Attempt, Point, Question, Voice } from '../lib/types'
+import { todayRows } from '../lib/today'
+import type { Attempt, Question, Voice } from '../lib/types'
+import { Skeleton, Working } from '../components/Loading'
 
 type Kind = 'review' | 'learn'
 
 /** The steps of the study flow per point. */
 type Step = 'load' | 'pretest' | 'lesson' | 'question' | 'result'
 
-const MODE_KEY = 'tutor.answerMode'
-
-/** Speaking is the default wherever the browser can record; the last choice is remembered. */
-function savedMode(): 'speak' | 'type' {
-  if (!canRecord()) return 'type'
-  try {
-    return localStorage.getItem(MODE_KEY) === 'type' ? 'type' : 'speak'
-  } catch {
-    return 'speak'
-  }
-}
-
 /** The error message of any thrown request failure. */
 const asMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+/** Where the learner is in the flow for this point. */
+function StudySteps({ kind, step }: { kind: Kind; step: Step }) {
+  const steps: [Step, string][] = kind === 'review'
+    ? [['question', 'Answer'], ['result', 'Result']]
+    : [['pretest', 'Guess'], ['lesson', 'Lesson'], ['question', 'Answer'], ['result', 'Result']]
+  const at = steps.findIndex(([s]) => s === step)
+  return (
+    <ol className="steps" aria-label="Steps">
+      {steps.map(([s, label], i) => (
+        <li key={s} className={i === at ? 'on' : i < at ? 'past' : ''} aria-current={i === at ? 'step' : undefined}>
+          {i < at ? `✓ ${label}` : label}
+        </li>
+      ))}
+    </ol>
+  )
+}
 
 /** The study flow for one point: a small state machine over pretest → lesson → question → result. */
 function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
@@ -47,13 +51,15 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
   const [pretestQ, setPretestQ] = useState<Question | null>(null)
   const [pretestText, setPretestText] = useState('')
   const [pretestFeedback, setPretestFeedback] = useState<string | null>(null)
+  const [pretestVoice, setPretestVoice] = useState<Voice | null>(null)
 
   const [question, setQuestion] = useState<Question | null>(null)
   const [qLoading, setQLoading] = useState(false)
   const [textAnswer, setTextAnswer] = useState('')
   const [choice, setChoice] = useState<number | null>(null)
   const [showLesson, setShowLesson] = useState(false)
-  const [mode, setMode] = useState(savedMode)
+  const [voice, setVoice] = useState<Voice | null>(null)
+  const [speechBusy, setSpeechBusy] = useState(false)
 
   const point = data?.export.points.find((p) => p.id === pointId)
   const topic = point?.topic ?? (pointId.includes('/') ? pointId.slice(0, pointId.indexOf('/')) : pointId)
@@ -109,6 +115,7 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
       setQuestion(q)
       setTextAnswer('')
       setChoice(null)
+      setVoice(null)
     } catch (e) {
       setActionError(asMsg(e))
     } finally {
@@ -149,7 +156,7 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
     }
   }
 
-  const speaking = mode === 'speak' && question !== null && question.kind !== 'mcq'
+  const speechHint = `${pointTitle(pointId)}. ${topic}`
 
   const canSubmit = question
     ? question.kind === 'mcq'
@@ -159,27 +166,12 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
 
   // runAttempt already stores the returned attempt; only move to the result step on success.
   const submit = () => {
-    if (!question || !canSubmit || busy) return
+    if (!question || !canSubmit || busy || speechBusy) return
     const answer = question.kind === 'mcq' ? String(choice) : textAnswer
-    void runAttempt('/api/answer', { point: pointId, q: question.q, kind, answer }).then((a) => {
+    const spoken = question.kind !== 'mcq' && voice ? { voice } : {}
+    void runAttempt('/api/answer', { point: pointId, q: question.q, kind, answer, ...spoken }).then((a) => {
       if (a) setStep('result')
     })
-  }
-
-  const submitSpoken = (text: string, voice: Voice) => {
-    if (!question || busy) return
-    void runAttempt('/api/answer', { point: pointId, q: question.q, kind, answer: text, voice }).then((a) => {
-      if (a) setStep('result')
-    })
-  }
-
-  const chooseMode = (next: 'speak' | 'type') => {
-    setMode(next)
-    try {
-      localStorage.setItem(MODE_KEY, next)
-    } catch {
-      // the choice just is not remembered
-    }
   }
 
   const retry = () => {
@@ -210,33 +202,18 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
     setQuestion(null)
     setTextAnswer('')
     setChoice(null)
+    setVoice(null)
     setStep('question')
   }
 
+  const rows = useMemo(() => (data ? todayRows(data) : []), [data])
+  const place = rows.findIndex((r) => r.id === pointId)
+  const nextRow = rows.find((r) => r.id !== pointId && !r.done)
+
   // The next Today item after this one, else back to the Today page.
   const goNext = useCallback(() => {
-    if (step !== 'result') return
-    if (!data) {
-      navigate('/')
-      return
-    }
-    const byId = new Map<string, Point>(data.export.points.map((p) => [p.id, p]))
-    const notDone = (id: string) => {
-      const p = byId.get(id)
-      return !p || !itemDone(p, data.today)
-    }
-    const rows = [
-      ...data.list.review.map((id) => ({ id, kind: 'review' as const })),
-      ...data.list.fresh.map((id) => ({ id, kind: 'learn' as const })),
-      ...data.list.extra.map((id) => {
-        const p = byId.get(id)
-        const due = !!p?.next_review && p.next_review <= data.today
-        return { id, kind: due ? ('review' as const) : ('learn' as const) }
-      }),
-    ]
-    const next = rows.find((r) => r.id !== pointId && notDone(r.id))
-    navigate(next ? `/study/${encodeURIComponent(next.id)}?kind=${next.kind}` : '/')
-  }, [data, pointId, step, navigate])
+    if (step === 'result') navigate(nextRow?.href ?? '/')
+  }, [nextRow, step, navigate])
   useHotkey('n', goNext)
 
   // Reload the shared data exactly once per recorded attempt.
@@ -250,31 +227,36 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
 
   return (
     <div>
-      <header className="page-head">
+      <div className="study-bar">
+        <Link className="back" to="/">← Today</Link>
+        {place >= 0 && <span className="hint">{`${place + 1} of ${rows.length}`}</span>}
+      </div>
+      <header className="study-head">
         <h1>{pointTitle(pointId)}</h1>
         <p>{topic}</p>
       </header>
+      {step !== 'load' && <StudySteps kind={kind} step={step} />}
 
       <div className="study">
         {(loadError || actionError) && (
           <div className="error-box" role="alert">{loadError ?? actionError}</div>
         )}
 
-        {step === 'load' && <p className="hint">Loading…</p>}
+        {step === 'load' && <Skeleton />}
 
         {step === 'pretest' && (pretestQ ? (
           <section className="card step">
             <p className="prompt">{pretestQ.prompt}</p>
-            <AnswerBox ariaLabel="Your guess" value={pretestText} onChange={setPretestText} />
+            <AnswerBox ariaLabel="Your guess" value={pretestText} onChange={setPretestText} hint={speechHint} voice={pretestVoice} onVoice={setPretestVoice} onBusy={setSpeechBusy} target={false} />
             <div className="row">
-              <button type="button" className="btn primary" disabled={busy || pretestText.trim() === ''} onClick={() => void checkPretest(pretestText)}>
+              <button type="button" className="btn primary" disabled={busy || speechBusy || pretestText.trim() === ''} onClick={() => void checkPretest(pretestText)}>
                 Check
               </button>
-              <button type="button" className="btn" disabled={busy} onClick={() => void checkPretest(null)}>
+              <button type="button" className="btn ghost" disabled={busy || speechBusy} onClick={() => void checkPretest(null)}>
                 I don't know yet
               </button>
             </div>
-            {busy && pretestFeedback === null && <p className="hint">Checking…</p>}
+            {busy && pretestFeedback === null && <Working text="Checking your guess" />}
             {pretestFeedback !== null && (
               <>
                 <p className="pretest-feedback">{pretestFeedback}</p>
@@ -287,7 +269,7 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
             )}
           </section>
         ) : (
-          <p className="hint">Loading…</p>
+          <Skeleton />
         ))}
 
         {step === 'lesson' && (
@@ -303,30 +285,19 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
 
         {step === 'question' && (question ? (
           <section className="card step">
-            <p className={speaking ? 'prompt big' : 'prompt'}>{question.prompt}</p>
-            {speaking ? (
-              <SpeakingAnswer key={question.q} hint={`${pointTitle(pointId)}. ${topic}`} busy={busy} onSubmit={submitSpoken} onType={() => chooseMode('type')} />
+            <p className="prompt big">{question.prompt}</p>
+            {question.kind === 'mcq' ? (
+              <McqOptions options={question.options ?? []} value={choice} onChange={setChoice} />
             ) : (
-              <>
-                {question.kind === 'mcq' ? (
-                  <McqOptions options={question.options ?? []} value={choice} onChange={setChoice} />
-                ) : (
-                  <AnswerBox value={textAnswer} onChange={setTextAnswer} onSubmit={submit} />
-                )}
-                <div className="row">
-                  <button type="button" className="btn primary" disabled={!canSubmit || busy} onClick={submit}>
-                    Submit
-                  </button>
-                  <span className="kbd-hint">
-                    {question.kind === 'mcq' ? 'Press 1–4 to pick an answer.' : '⌘↩ to submit'}
-                  </span>
-                  {question.kind !== 'mcq' && canRecord() && (
-                    <button type="button" className="btn ghost" onClick={() => chooseMode('speak')}>Speak instead</button>
-                  )}
-                </div>
-              </>
+              <AnswerBox value={textAnswer} onChange={setTextAnswer} onSubmit={submit} hint={speechHint} voice={voice} onVoice={setVoice} onBusy={setSpeechBusy} />
             )}
-            {busy && !qLoading && <p className="hint">Grading…</p>}
+            <div className="row">
+              <button type="button" className="btn primary" disabled={!canSubmit || busy || speechBusy} onClick={submit}>
+                Submit
+              </button>
+              {question.kind === 'mcq' && <span className="kbd-hint">Press 1–4 to pick an answer.</span>}
+            </div>
+            {busy && !qLoading && <Working text="Grading your answer" />}
             <div className="row spread card-foot">
               {kind === 'review' ? (
                 <button type="button" className="btn ghost" onClick={() => setShowLesson((v) => !v)}>
@@ -336,14 +307,14 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
                 <span />
               )}
               <button type="button" className="btn ghost" disabled={busy} onClick={() => void regenerate()}>
-                Regenerate questions
+                New question
               </button>
             </div>
-            {qLoading && <p className="hint">Preparing questions…</p>}
+            {qLoading && <Working text="Preparing questions" />}
             {kind === 'review' && showLesson && <LessonView pointId={pointId} />}
           </section>
         ) : (
-          <p className="hint">Preparing questions…</p>
+          <Working text="Preparing questions" />
         ))}
 
         {step === 'result' && attempt && (
@@ -355,7 +326,12 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
             onAppeal={appeal}
           />
         )}
-        {step === 'result' && attempt?.grade && !attempt.grade.ok && <LessonView pointId={pointId} />}
+        {step === 'result' && attempt?.grade && !attempt.grade.ok && (
+          <details className="more">
+            <summary>Review the lesson</summary>
+            <LessonView pointId={pointId} />
+          </details>
+        )}
         {step === 'result' && attempt && (
           <div className="study-foot">
             {point?.type === 'concept' && attempt.record && !attempt.record.passed_gate && (
@@ -363,9 +339,11 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
                 One more question
               </button>
             )}
-            <button type="button" className="btn primary" aria-label="Next" onClick={goNext}>
-              Next <kbd>n</kbd>
-            </button>
+            {attempt.state === 'recorded' && (
+              <button type="button" className="btn primary wide" onClick={goNext}>
+                {nextRow ? `Next: ${nextRow.title}` : 'Back to Today'} <kbd>n</kbd>
+              </button>
+            )}
           </div>
         )}
       </div>

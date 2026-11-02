@@ -1,4 +1,5 @@
-import type { DuePoint, Point, TodayList } from './types'
+import { pointTitle } from './format'
+import type { DuePoint, Overview, Point, TodayList } from './types'
 
 /**
  * The next points to learn, in the same order as `tutor.py next`: unscheduled new or learning
@@ -46,4 +47,51 @@ export function addExtra(list: TodayList, points: Point[], topicOrder: string[],
 /** A point counts as done today once its history has an entry dated today (web or terminal). */
 export function itemDone(point: Point, date: string): boolean {
   return point.history.some((h) => h.d === date)
+}
+
+/** One item of today's list, in the order it should be done. */
+export interface TodayRow {
+  id: string
+  title: string
+  topic: string | null
+  href: string
+  /** the short word shown for this kind of item */
+  label: 'Review' | 'New' | 'Extra' | 'Recheck' | 'Read again'
+  done: boolean
+}
+
+/** Today's reviews, new points, extras and reading rechecks as one ordered list. */
+export function todayRows(o: Overview): TodayRow[] {
+  const byId = new Map(o.export.points.map((p) => [p.id, p]))
+  const row = (id: string, kind: 'review' | 'learn', label: TodayRow['label']): TodayRow => {
+    const point = byId.get(id)
+    return {
+      id,
+      title: pointTitle(id),
+      topic: point?.topic ?? null,
+      href: `/study/${encodeURIComponent(id)}?kind=${kind}`,
+      label,
+      done: !!point && itemDone(point, o.today),
+    }
+  }
+  const extraKind = (id: string) => {
+    const reviewDate = byId.get(id)?.next_review
+    return reviewDate && reviewDate <= o.today ? 'review' : 'learn'
+  }
+  return [
+    ...o.list.review.map((id) => row(id, 'review', 'Review')),
+    ...o.list.fresh.map((id) => row(id, 'learn', 'New')),
+    ...o.list.extra.map((id) => row(id, extraKind(id), 'Extra')),
+    ...(o.list.reading ?? []).map((path): TodayRow => {
+      const info = o.reading?.[path]
+      return {
+        id: path,
+        title: info?.title ?? path,
+        topic: info?.topic ?? null,
+        href: `/read/${encodeURIComponent(path)}`,
+        label: info?.kind === 'reread' ? 'Read again' : 'Recheck',
+        done: !!info?.done,
+      }
+    }),
+  ]
 }

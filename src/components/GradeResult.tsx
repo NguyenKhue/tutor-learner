@@ -37,21 +37,39 @@ export function GradeResult({ attempt, busy = false, onContinue, onRetry, onAppe
     <section className="card grade">
       {attempt.grade && (
         <>
-          <div className={`grade-big ${attempt.grade.ok ? 'ok' : 'no'}`}>
-            {attempt.grade.ok ? 'Correct' : 'Not yet'}
+          <div className={`verdict-box ${attempt.grade.ok ? 'ok' : 'no'}`}>
+            <div className="grade-big">{attempt.grade.ok ? 'Correct' : 'Not yet'}</div>
+            <p className="why">{attempt.grade.why}</p>
           </div>
-          <p className="why">{attempt.grade.why}</p>
           {attempt.grade.missing.length > 0 && (
             <div className="grade-block">
-              <div className="grade-label">Missing:</div>
+              <div className="grade-label">Add this next time</div>
               <ul>
                 {attempt.grade.missing.map((m) => <li key={m}>{m}</li>)}
               </ul>
             </div>
           )}
           <p className="grade-feedback">{attempt.grade.feedback}</p>
-          <SampleAnswer text={attempt.grade.sample} />
+          {attempt.grade.sample && (
+            <details className="more">
+              <summary>A strong answer</summary>
+              <SampleAnswer text={attempt.grade.sample} />
+            </details>
+          )}
         </>
+      )}
+
+      {(attempt.english || attempt.voice) && (
+        <details className="more">
+          <summary>{attempt.english ? 'Your English' : 'Your recording'}</summary>
+          {attempt.voice && (
+            <div className="voice grade-block">
+              <div className="grade-label">Your recording · {clock(attempt.voice.seconds)}, {lengthNote(attempt.voice.seconds)}</div>
+              <audio controls preload="metadata" src={`/api/speech/audio?id=${attempt.voice.audio}`} />
+            </div>
+          )}
+          <EnglishFeedback attempt={attempt} />
+        </details>
       )}
 
       {attempt.record && (
@@ -63,15 +81,6 @@ export function GradeResult({ attempt, busy = false, onContinue, onRetry, onAppe
           {attempt.record.passed_gate && <span className="win">Mastered!</span>}
         </div>
       )}
-
-      {attempt.voice && (
-        <div className="voice grade-block">
-          <div className="grade-label">Your recording · {clock(attempt.voice.seconds)}, {lengthNote(attempt.voice.seconds)}</div>
-          <audio controls preload="metadata" src={`/api/speech/audio?id=${attempt.voice.audio}`} />
-        </div>
-      )}
-
-      <EnglishFeedback attempt={attempt} />
 
       {err && (
         <div className="grade-block">

@@ -31,17 +31,15 @@ Topics and points are created in the terminal with the Claude Code `tutor` skill
 
 ## What it does
 
-- **Today:** the reviews that are due (in `tutor.py` order, up to `daily_review_cap`), then the next new points (3 a day
-  by default). The list is locked for the day. A countdown shows the days left until the interview, plus your streak.
-  "Study one more" adds an optional item.
+- **Today:** one next thing to do with a **Start** button, then the rest of the day: the reviews that are due (in `tutor.py` order, up to `daily_review_cap`), the next new points (3 a day by default) and any reading rechecks. The list is locked for the day. A countdown shows the days left until the interview, plus your streak. "Study one more" adds an optional item.
 - **Study:** a new point goes through four steps: a short **pretest** (not scored), a **lesson** written from the point's
   source notes and saved to `Tutor/Lessons/`, the **main question**, then the **result**. A due point skips the
   first two steps. Multiple-choice answers are graded in code. Written answers are graded by Claude against criteria
   fixed when the question was made.
-- **Speaking:** written questions open in speaking mode. Press **Start speaking** and answer in English while a bar shows the 0:30–1:00 target (it stops by itself at 2:00). Whisper writes down what you said on this Mac, you listen back once, then ask for feedback. **Type instead** switches to the text box. Recordings stay in the app data folder for 30 days, are never added to the vault or the backups, and nothing is sent to a speech service. Claude only reads the text, so pronunciation is not graded.
+- **Speaking:** every written answer has one box. Type in it, or press the mic and speak in English while a bar shows the 0:30–1:00 target (it stops by itself at 2:00). Whisper writes your words into the same box on this Mac, so you can listen back, fix a word and submit. Recordings stay in the app data folder for 30 days, are never added to the vault or the backups, and nothing is sent to a speech service. Claude only reads the text, so pronunciation is not graded.
 - **English feedback:** for a written answer, you see your text, a corrected version and up to 3 short notes. It is kept
   apart from the score and can be turned off in Settings.
-- **Fair grading:** a failed written answer waits until you press "Continue" or "I think this is right". The second
+- **Fair grading:** a failed written answer waits until you press "Continue" or "I think this is right"; "Next" appears after that. The second
   button gives one regrade with your argument. Each answer adds exactly one line to the point's `history`.
 - **Nothing is lost:** your answer is saved before grading. If Claude times out or hits the usage limit, or the server
   restarts, the answer stays and the Study page offers "Grade again".
@@ -51,8 +49,9 @@ Topics and points are created in the terminal with the Claude Code `tutor` skill
   answer 3 short questions. Passing 2 of 3 schedules a recheck after 7 days, then after 21 days, then the note is done.
   Failing asks for a reread in 2 days. Due notes show up in Today under "Reading review" (3 a day by default). Reading
   never writes to the vault: its data lives in `state.json`.
-- **Topics, Point, Progress, Settings:** status per topic, a point's history and past answers, a heatmap, a 14-day
-  due forecast and the pace needed before the interview.
+- **Topics, Point, Progress, Settings:** progress and the next step per topic, a point's history and past answers,
+  whether your daily goal is enough to finish before the interview, a heatmap and a 14-day review forecast. The theme
+  lives in Settings.
 
 ## How it works
 

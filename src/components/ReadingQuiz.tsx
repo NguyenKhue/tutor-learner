@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { api, ApiError } from '../api/client'
 import type { ReadingCheck, ReadingQuiz as Quiz } from '../lib/types'
 import { SampleAnswer } from './SampleAnswer'
+import { Working } from './Loading'
 
 const ERROR_TEXT: Record<string, string> = {
   limit: 'Claude usage limit reached. Your answers are saved. Try again later.',
@@ -58,7 +59,7 @@ export function ReadingQuiz({ path, quiz, initial, onGraded }: { path: string; q
           <button type="button" className="btn primary" disabled={!ready || busy} onClick={() => void submit()}>
             Submit
           </button>
-          {busy && <span className="hint">Grading…</span>}
+          {busy && <Working text="Grading your answer" />}
         </div>
       </section>
     )

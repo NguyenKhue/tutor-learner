@@ -32,31 +32,33 @@ test('shows countdown and done count', async () => {
   goTo('/')
   render(<App />)
   expect(await screen.findByText('77 days to interview')).toBeInTheDocument()
-  expect(screen.getByText('1 / 3 done')).toBeInTheDocument()
+  expect(screen.getByText('1 of 3 done today')).toBeInTheDocument()
 })
 
-test('lists review before new', async () => {
+test('the next thing to do has one Start button', async () => {
   mockApi({ 'GET /api/overview': overview() })
   goTo('/')
   render(<App />)
-  const review = await screen.findByRole('region', { name: 'Review' })
-  const fresh = screen.getByRole('region', { name: 'New' })
-  expect(within(review).getByText('How suspend works')).toBeInTheDocument()
-  expect(within(fresh).getAllByRole('link').map((a) => a.textContent)).toEqual(['Null safety', 'Any, Unit and Nothing'])
-  expect(review.compareDocumentPosition(fresh) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  expect(within(review).getByRole('link', { name: 'How suspend works' })).toHaveAttribute(
-    'href',
-    `/study/${encodeURIComponent(A)}?kind=review`,
-  )
-  expect(within(fresh).getByRole('link', { name: 'Null safety' })).toHaveAttribute('href', `/study/${encodeURIComponent(B)}?kind=learn`)
+  const next = await screen.findByRole('region', { name: 'How suspend works' })
+  expect(within(next).getByText('Next · Review')).toBeInTheDocument()
+  expect(within(next).getByRole('link', { name: 'Start' })).toHaveAttribute('href', `/study/${encodeURIComponent(A)}?kind=review`)
 })
 
-test('done items show a check', async () => {
+test('the rest of the list keeps its order and links', async () => {
   mockApi({ 'GET /api/overview': overview() })
   goTo('/')
   render(<App />)
-  const fresh = await screen.findByRole('region', { name: 'New' })
-  const items = within(fresh).getAllByRole('listitem')
+  const list = await screen.findByRole('list', { name: "Today's list" })
+  expect(within(list).getAllByRole('link').map((a) => a.textContent)).toEqual(['Null safety', 'Any, Unit and Nothing'])
+  expect(within(list).getByRole('link', { name: 'Null safety' })).toHaveAttribute('href', `/study/${encodeURIComponent(B)}?kind=learn`)
+})
+
+test('done items show a check and are skipped by Start', async () => {
+  mockApi({ 'GET /api/overview': overview() })
+  goTo('/')
+  render(<App />)
+  const list = await screen.findByRole('list', { name: "Today's list" })
+  const items = within(list).getAllByRole('listitem')
   expect(within(items[0]).getByLabelText('Done')).toBeInTheDocument()
   expect(within(items[1]).queryByLabelText('Done')).toBeNull()
 })
@@ -69,8 +71,8 @@ test('study one more appends an item', async () => {
   goTo('/')
   render(<App />)
   await userEvent.click(await screen.findByRole('button', { name: 'Study one more' }))
-  const extra = await screen.findByRole('region', { name: 'Extra' })
-  expect(within(extra).getByText('Data classes')).toBeInTheDocument()
+  expect(await screen.findByText('Data classes')).toBeInTheDocument()
+  expect(screen.getByText('Extra')).toBeInTheDocument()
   expect(calls.some((c) => c.method === 'POST' && c.path === '/api/today/extra')).toBe(true)
 })
 
@@ -79,6 +81,13 @@ test('empty list says nothing left', async () => {
   goTo('/')
   render(<App />)
   expect(await screen.findByText('Nothing left today.')).toBeInTheDocument()
+})
+
+test('a finished day says so', async () => {
+  mockApi({ 'GET /api/overview': makeOverview({ export: { ...makeOverview().export, points: [makePoint(B, { history: [{ d: '2026-10-22', kind: 'learn', ok: true, q: 'q2', why: 'x' }] })] }, list: { date: '2026-10-22', review: [], fresh: [B], extra: [] } }) })
+  goTo('/')
+  render(<App />)
+  expect(await screen.findByText('All done for today')).toBeInTheDocument()
 })
 
 test('shows a load error', async () => {

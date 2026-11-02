@@ -58,7 +58,8 @@ test('reading page shows up next, due and progress', async () => {
   const progress = screen.getByRole('region', { name: 'Progress by topic' })
   const row = within(progress).getAllByRole('row').find((r) => r.textContent?.includes('Coroutines and Flow'))!
   expect(row).toHaveTextContent('1')
-  expect(screen.getByText('Classified 2 / 2')).toBeInTheDocument()
+  expect(screen.queryByText('Classified 2 / 2')).toBeNull()
+  expect(within(next).getByRole('link', { name: 'Read Structured concurrency' })).toHaveAttribute('href', `/read/${enc(A)}`)
 })
 
 test('skip calls the api and reloads', async () => {
@@ -171,11 +172,11 @@ test('today shows reading review and counts it', async () => {
   })
   goTo('/')
   render(<App />)
-  const region = await screen.findByRole('region', { name: 'Reading review' })
-  expect(within(region).getByRole('link', { name: 'Structured concurrency' })).toHaveAttribute('href', `/read/${enc(A)}`)
-  expect(within(region).getByText('read again')).toBeInTheDocument()
-  expect(within(within(region).getAllByRole('listitem')[0]).getByLabelText('Done')).toBeInTheDocument()
-  expect(screen.getByText('1 / 3 done')).toBeInTheDocument()
+  const list = await screen.findByRole('list', { name: "Today's list" })
+  expect(within(list).getByRole('link', { name: 'Structured concurrency' })).toHaveAttribute('href', `/read/${enc(A)}`)
+  expect(within(list).getByText('Read again')).toBeInTheDocument()
+  expect(within(within(list).getAllByRole('listitem')[0]).getByLabelText('Done')).toBeInTheDocument()
+  expect(screen.getByText('1 of 3 done today')).toBeInTheDocument()
 })
 
 test('nav has Reading', async () => {

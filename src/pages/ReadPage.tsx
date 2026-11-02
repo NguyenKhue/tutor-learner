@@ -7,6 +7,7 @@ import { useReading } from '../hooks/useReading'
 import { useTutorData } from '../hooks/useTutorData'
 import { obsidianUrl } from '../lib/format'
 import type { CatalogEntry, ReadingQuiz as Quiz } from '../lib/types'
+import { Skeleton, Working } from '../components/Loading'
 
 /** Read one note on the web, then take its quiz; a note due for a recheck goes straight to the quiz. */
 export function ReadPage() {
@@ -56,7 +57,7 @@ export function ReadPage() {
   }
 
   if (error && !note) return <pre className="error-box">{error}</pre>
-  if (!note) return <p className="hint">Loading…</p>
+  if (!note) return <Skeleton />
 
   return (
     <article className="reader">
@@ -84,7 +85,7 @@ export function ReadPage() {
             <button type="button" className="btn primary" disabled={loadingQuiz} onClick={() => void startQuiz()}>
               I've read it
             </button>
-            {loadingQuiz && <span className="hint">Preparing questions…</span>}
+            {loadingQuiz && <Working text="Preparing questions" />}
           </div>
         </>
       )}

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { api } from '../api/client'
 import { Markdown } from './Markdown'
+import { Working } from './Loading'
 
 /** The lesson payload from the server. */
 interface Lesson {
@@ -31,7 +32,7 @@ export function LessonView({ pointId, footer }: { pointId: string; footer?: Reac
 
   return (
     <article className="lesson">
-      {!lesson && !error && <p className="hint">Writing lesson…</p>}
+      {!lesson && !error && <Working text="Writing the lesson" />}
       {error && <p className="lesson-error">{error}</p>}
       {lesson && (
         <>

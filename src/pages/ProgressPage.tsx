@@ -1,8 +1,11 @@
 import { useMemo } from 'react'
 import { ActivityCalendar, type Activity } from 'react-activity-calendar'
+import { Link } from 'react-router-dom'
 import { useTutorData } from '../hooks/useTutorData'
+import { daysBetween } from '../lib/day'
 import { activityByDay, dueForecast, pace, streak } from '../lib/stats'
 import type { Overview, Point } from '../lib/types'
+import { Skeleton } from '../components/Loading'
 
 const HEAT_START = '2026-10-07'
 const DAY = 86_400_000
@@ -43,61 +46,61 @@ function Progress({ data }: { data: Overview }) {
   const peak = Math.max(1, ...forecast.map((d) => d.count))
   const barHeight = (count: number) => Math.round((count / peak) * 100)
 
+  const planned = data.settings.newPerDay
+  const behind = paceInfo.perDay !== null && paceInfo.perDay > planned
+  const interviewDays = data.export.config.interview_date ? daysBetween(today, data.export.config.interview_date) : null
+  const anyDue = forecast.some((d) => d.count > 0)
+
   return (
     <>
       <header className="page-head">
         <h1>Progress</h1>
-        <p>Derived from your answer history.</p>
       </header>
 
+      {paceInfo.perDay === null ? (
+        <p className="hint">No interview date set.</p>
+      ) : (
+        <div className={behind ? 'pace behind' : 'pace'}>
+          <b>{behind ? 'Behind pace' : 'On track'}</b>
+          <p>{`You plan ${planned} new ${planned === 1 ? 'point' : 'points'} a day. You need about ${paceInfo.perDay} to finish 4 weeks before the interview.`}</p>
+          {behind && <Link className="btn primary" to="/settings">Change daily goal</Link>}
+        </div>
+      )}
+
+      <div className="stat-tiles">
+        <div className="tile-stat"><b>{`${mastered} / ${points.length}`}</b><span>mastered</span></div>
+        {interviewDays !== null && <div className="tile-stat"><b>{interviewDays}</b><span>days left</span></div>}
+        <div className="tile-stat"><b>{streak(points, today)}</b><span>day streak</span></div>
+      </div>
+
       <section aria-labelledby="activity-h">
-        <h2 id="activity-h">Answers so far</h2>
+        <h2 id="activity-h">Your answers</h2>
         <ActivityCalendar
           data={heat}
           tooltips={TOOLTIPS}
           theme={{ light: HEAT, dark: HEAT }}
           showWeekdayLabels={['mon', 'wed', 'fri']}
-          labels={{ totalCount: '{{count}} answers in the last two weeks' }}
+          labels={{ totalCount: '{{count}} answers so far' }}
           fontSize={11}
           blockSize={11}
           blockMargin={2}
         />
-        <div className="heatrow">
-          <div className="stat">
-            <b>{`${mastered} / ${points.length} mastered`}</b>
-          </div>
-          <div className="stat">
-            <b>{`${streak(points, today)}-day streak`}</b>
-          </div>
-        </div>
       </section>
 
-      <section aria-labelledby="forecast-h">
-        <h2 id="forecast-h">Due forecast</h2>
-        <p className="hint">
-          {`Points coming due from ${forecast[0]?.date ?? today} to ${forecast[forecast.length - 1]?.date ?? today}.`}
-        </p>
-        <div className="bars" role="list" aria-label="Due forecast">
-          {forecast.map((day) => (
-            <div key={day.date} role="listitem" aria-label={`${day.date}: ${day.count} due`}>
-              <b>{day.count}</b>
-              <i style={{ height: `${barHeight(day.count)}px` }} />
-              <span>{day.date.slice(8)}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section aria-labelledby="pace-h">
-        <h2 id="pace-h">Interview pace</h2>
-        {paceInfo.perDay !== null ? (
-          <p className="hint">
-            {`About ${paceInfo.perDay} new ${paceInfo.perDay === 1 ? 'point' : 'points'} a day to finish 4 weeks before the interview.`}
-          </p>
-        ) : (
-          <p className="hint">No interview date set.</p>
-        )}
-      </section>
+      {anyDue && (
+        <section aria-labelledby="forecast-h">
+          <h2 id="forecast-h">Reviews coming up</h2>
+          <div className="bars" role="list" aria-label="Reviews coming up">
+            {forecast.map((day) => (
+              <div key={day.date} role="listitem" aria-label={`${day.date}: ${day.count} due`}>
+                <b>{day.count || ''}</b>
+                <i style={{ height: `${barHeight(day.count)}px` }} />
+                <span>{day.date.slice(8)}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </>
   )
 }
@@ -105,6 +108,6 @@ function Progress({ data }: { data: Overview }) {
 /** The progress page: waits for the overview, then renders the derived stats. */
 export function ProgressPage() {
   const { data } = useTutorData()
-  if (!data) return <p className="hint">Loading…</p>
+  if (!data) return <Skeleton />
   return <Progress data={data} />
 }

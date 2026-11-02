@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { api, ApiError } from '../api/client'
 import { useTutorData } from '../hooks/useTutorData'
+import { THEMES, saveTheme, storedTheme } from '../lib/theme'
 import type { Settings } from '../lib/types'
+import { Skeleton } from '../components/Loading'
 
 /** The part of GET /api/health this page reads. */
 interface Health {
@@ -28,6 +30,7 @@ export function SettingsPage() {
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState<ApiError | null>(null)
   const [health, setHealth] = useState<Health | null>(null)
+  const [theme, setTheme] = useState(storedTheme)
 
   useEffect(() => {
     let on = true
@@ -44,7 +47,7 @@ export function SettingsPage() {
     }
   }, [])
 
-  if (!data) return <p className="hint">Loading…</p>
+  if (!data) return <Skeleton />
 
   const perDay = newPerDay ?? String(data.settings.newPerDay)
   const englishFeedback = english ?? data.settings.englishFeedback
@@ -125,6 +128,27 @@ export function SettingsPage() {
               Save
             </button>
             {saved && <span className="hint">Saved</span>}
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="field">
+            <span className="field-label">Theme</span>
+            <span className="theme" role="group" aria-label="Theme">
+              {THEMES.map(([t, label]) => (
+                <button
+                  key={t}
+                  type="button"
+                  aria-pressed={theme === t}
+                  onClick={() => {
+                    setTheme(t)
+                    saveTheme(t)
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </span>
           </div>
         </div>
 

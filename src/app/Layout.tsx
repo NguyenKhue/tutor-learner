@@ -1,52 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
+import { applyTheme, storedTheme } from '../lib/theme'
 
 const NAV = [
   ['/', 'Today'],
   ['/reading', 'Reading'],
   ['/topics', 'Topics'],
   ['/progress', 'Progress'],
-  ['/settings', 'Settings'],
 ] as const
 
-type Theme = 'light' | 'system' | 'dark'
-const THEMES: [Theme, string][] = [
-  ['light', 'Light'],
-  ['system', 'System'],
-  ['dark', 'Dark'],
-]
-const THEME_KEY = 'tutor-theme'
-
-/** Reads the saved theme, defaulting to System when nothing is stored. */
-function storedTheme(): Theme {
-  try {
-    const t = localStorage.getItem(THEME_KEY)
-    if (t === 'light' || t === 'system' || t === 'dark') return t
-  } catch {
-    // storage unavailable (private mode) — keep the default
-  }
-  return 'system'
-}
-
-/** App shell: top bar with brand, nav and theme toggle, the page below. */
+/** App shell: top bar with brand, nav and the settings link, the page below. */
 export function Layout() {
-  const [theme, setTheme] = useState<Theme>(storedTheme)
-
-  useEffect(() => {
-    const root = document.documentElement
-    if (theme === 'system') root.removeAttribute('data-theme')
-    else root.dataset.theme = theme
-  }, [theme])
-
-  /** Picks a theme and remembers it for the next visit. */
-  const pickTheme = (t: Theme) => {
-    setTheme(t)
-    try {
-      localStorage.setItem(THEME_KEY, t)
-    } catch {
-      // storage unavailable — the choice only lasts this session
-    }
-  }
+  useEffect(() => applyTheme(storedTheme()), [])
 
   return (
     <div className="wrap">
@@ -58,16 +23,13 @@ export function Layout() {
               {label}
             </NavLink>
           ))}
+          <NavLink to="/settings" className="nav-settings" aria-label="Settings">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
+            </svg>
+          </NavLink>
         </nav>
-        <div className="top-right">
-          <span className="theme" role="group" aria-label="Theme">
-            {THEMES.map(([t, label]) => (
-              <button key={t} type="button" aria-pressed={theme === t} onClick={() => pickTheme(t)}>
-                {label}
-              </button>
-            ))}
-          </span>
-        </div>
       </header>
       <main>
         <Outlet />

@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import { useTutorData } from '../hooks/useTutorData'
 import { obsidianUrl, pointTitle } from '../lib/format'
 import type { Attempt } from '../lib/types'
+import { Skeleton } from '../components/Loading'
 
 /** The error message of any thrown request failure. */
 const asMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -38,7 +39,7 @@ export function PointPage() {
     }
   }, [pointId])
 
-  if (!data) return <p className="hint">Loading…</p>
+  if (!data) return <Skeleton />
   const point = data.export.points.find((p) => p.id === pointId)
   if (!point) return <p className="hint">Point not found.</p>
 
@@ -122,7 +123,7 @@ export function PointPage() {
             </div>
           )}
           {attempts === null ? (
-            <p className="hint">Loading…</p>
+            <Skeleton />
           ) : attempts.length === 0 ? (
             <p className="hint">No answers from the web yet.</p>
           ) : (

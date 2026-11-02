@@ -1,12 +1,13 @@
 import { Link, useParams } from 'react-router-dom'
 import { useTutorData } from '../hooks/useTutorData'
 import { pointTitle } from '../lib/format'
+import { Skeleton } from '../components/Loading'
 
 /** Topic: the points of one topic, listed in their order within the vault. */
 export function TopicPage() {
   const { topic = '' } = useParams()
   const { data } = useTutorData()
-  if (!data) return <p className="hint">Loading…</p>
+  if (!data) return <Skeleton />
 
   const points = data.export.points
     .filter((p) => p.topic === topic)

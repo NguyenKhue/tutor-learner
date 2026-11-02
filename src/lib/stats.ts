@@ -59,3 +59,14 @@ export function topicSummary(points: Point[], topicOrder: string[]): TopicRow[] 
   const rank = (t: string) => (topicOrder.includes(t) ? topicOrder.indexOf(t) : topicOrder.length)
   return [...rows.values()].sort((a, b) => rank(a.topic) - rank(b.topic) || a.topic.localeCompare(b.topic))
 }
+
+/** Where to go next in a topic: unfinished points first, then new ones, in vault order. */
+export function nextInTopic(points: Point[], topic: string): { href: string; label: 'Continue' | 'Start' } | null {
+  const open = points.filter((p) => p.topic === topic && p.status !== 'mastered').sort((a, b) => a.order - b.order)
+  const point = open.find((p) => p.status === 'learning') ?? open[0]
+  if (!point) return null
+  return {
+    href: `/study/${encodeURIComponent(point.id)}?kind=learn`,
+    label: points.some((p) => p.topic === topic && p.status !== 'new') ? 'Continue' : 'Start',
+  }
+}
