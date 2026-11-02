@@ -5,16 +5,30 @@ import { AnswerBox } from '../components/AnswerBox'
 import { GradeResult } from '../components/GradeResult'
 import { LessonView } from '../components/LessonView'
 import { McqOptions } from '../components/McqOptions'
+import { SpeakingAnswer } from '../components/SpeakingAnswer'
+import { canRecord } from '../hooks/useRecorder'
 import { useHotkey } from '../hooks/useHotkey'
 import { useTutorData } from '../hooks/useTutorData'
 import { pointTitle } from '../lib/format'
 import { itemDone } from '../lib/today'
-import type { Attempt, Point, Question } from '../lib/types'
+import type { Attempt, Point, Question, Voice } from '../lib/types'
 
 type Kind = 'review' | 'learn'
 
 /** The steps of the study flow per point. */
 type Step = 'load' | 'pretest' | 'lesson' | 'question' | 'result'
+
+const MODE_KEY = 'tutor.answerMode'
+
+/** Speaking is the default wherever the browser can record; the last choice is remembered. */
+function savedMode(): 'speak' | 'type' {
+  if (!canRecord()) return 'type'
+  try {
+    return localStorage.getItem(MODE_KEY) === 'type' ? 'type' : 'speak'
+  } catch {
+    return 'speak'
+  }
+}
 
 /** The error message of any thrown request failure. */
 const asMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -39,6 +53,7 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
   const [textAnswer, setTextAnswer] = useState('')
   const [choice, setChoice] = useState<number | null>(null)
   const [showLesson, setShowLesson] = useState(false)
+  const [mode, setMode] = useState(savedMode)
 
   const point = data?.export.points.find((p) => p.id === pointId)
   const topic = point?.topic ?? (pointId.includes('/') ? pointId.slice(0, pointId.indexOf('/')) : pointId)
@@ -134,6 +149,8 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
     }
   }
 
+  const speaking = mode === 'speak' && question !== null && question.kind !== 'mcq'
+
   const canSubmit = question
     ? question.kind === 'mcq'
       ? choice !== null
@@ -147,6 +164,22 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
     void runAttempt('/api/answer', { point: pointId, q: question.q, kind, answer }).then((a) => {
       if (a) setStep('result')
     })
+  }
+
+  const submitSpoken = (text: string, voice: Voice) => {
+    if (!question || busy) return
+    void runAttempt('/api/answer', { point: pointId, q: question.q, kind, answer: text, voice }).then((a) => {
+      if (a) setStep('result')
+    })
+  }
+
+  const chooseMode = (next: 'speak' | 'type') => {
+    setMode(next)
+    try {
+      localStorage.setItem(MODE_KEY, next)
+    } catch {
+      // the choice just is not remembered
+    }
   }
 
   const retry = () => {
@@ -270,22 +303,31 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
 
         {step === 'question' && (question ? (
           <section className="card step">
-            <p className="prompt">{question.prompt}</p>
-            {question.kind === 'mcq' ? (
-              <McqOptions options={question.options ?? []} value={choice} onChange={setChoice} />
+            <p className={speaking ? 'prompt big' : 'prompt'}>{question.prompt}</p>
+            {speaking ? (
+              <SpeakingAnswer key={question.q} hint={`${pointTitle(pointId)}. ${topic}`} busy={busy} onSubmit={submitSpoken} onType={() => chooseMode('type')} />
             ) : (
-              <AnswerBox value={textAnswer} onChange={setTextAnswer} onSubmit={submit} />
+              <>
+                {question.kind === 'mcq' ? (
+                  <McqOptions options={question.options ?? []} value={choice} onChange={setChoice} />
+                ) : (
+                  <AnswerBox value={textAnswer} onChange={setTextAnswer} onSubmit={submit} />
+                )}
+                <div className="row">
+                  <button type="button" className="btn primary" disabled={!canSubmit || busy} onClick={submit}>
+                    Submit
+                  </button>
+                  <span className="kbd-hint">
+                    {question.kind === 'mcq' ? 'Press 1–4 to pick an answer.' : '⌘↩ to submit'}
+                  </span>
+                  {question.kind !== 'mcq' && canRecord() && (
+                    <button type="button" className="btn ghost" onClick={() => chooseMode('speak')}>Speak instead</button>
+                  )}
+                </div>
+              </>
             )}
-            <div className="row">
-              <button type="button" className="btn primary" disabled={!canSubmit || busy} onClick={submit}>
-                Submit
-              </button>
-              <span className="kbd-hint">
-                {question.kind === 'mcq' ? 'Press 1–4 to pick an answer.' : '⌘↩ to submit'}
-              </span>
-            </div>
             {busy && !qLoading && <p className="hint">Grading…</p>}
-            <div className="row spread">
+            <div className="row spread card-foot">
               {kind === 'review' ? (
                 <button type="button" className="btn ghost" onClick={() => setShowLesson((v) => !v)}>
                   {showLesson ? 'Hide lesson' : 'Show lesson'}

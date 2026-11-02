@@ -144,7 +144,7 @@ export function buildQuestionsPrompt(ctx: PromptContext, avoidCodes: string[]): 
 
 /** Builds the prompt that grades one answer, optionally with English feedback and an appeal. */
 export function buildGradePrompt(
-  a: PromptContext & { question: Question; answer: string; english: boolean; appeal?: string },
+  a: PromptContext & { question: Question; answer: string; english: boolean; spoken?: boolean; appeal?: string },
 ): string {
   const lines = [
     ROLE,
@@ -171,6 +171,9 @@ export function buildGradePrompt(
   }
 
   lines.push("Khue's answer:", '<answer>', a.answer, '</answer>', '')
+  if (a.spoken) {
+    lines.push('Khue spoke this answer and speech recognition wrote it down. A word may be misheard, so read an odd word as its likely sound-alike.', '')
+  }
 
   lines.push(
     '## Grading rules',
@@ -189,6 +192,7 @@ export function buildGradePrompt(
       '- Set english = { "corrected": ..., "notes": ... }.',
       "- corrected = Khue's answer rewritten in natural, correct interview English with the same meaning. If the answer was in Vietnamese, translate it.",
       '- notes = at most 3 short notes about grammar or more natural wording.',
+      ...(a.spoken ? ['- This was speech: write corrected as natural spoken English, and never comment on punctuation, capital letters or spelling.'] : []),
       '',
     )
   } else {

@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
-import type { Attempt, Overview, Question, Settings, TodayList } from '../src/lib/types'
+import type { Attempt, Overview, Question, Settings, TodayList, Voice } from '../src/lib/types'
 import { deriveReading, interviewCap } from '../src/lib/readingSchedule'
 import { localToday } from '../src/lib/day'
 import { addExtra, buildToday, ensureToday } from '../src/lib/today'
@@ -14,6 +14,9 @@ import { TutorCliError, createTutorCli, type TutorCli } from './tutor'
 import { BadPath } from './vault'
 import { resolveVaultImage } from './reading/images'
 import { createReadingService, type ReadingService } from './reading/service'
+import { SpeechError, createSpeech, isAudioId, type SpeechService } from './speech'
+
+const MAX_AUDIO_BYTES = 30_000_000
 
 /** Where the API reads its config and keeps its state. */
 export interface ApiPaths {
@@ -27,6 +30,7 @@ export interface ApiDeps {
   today?: () => string
   prefetch?: boolean
   python?: string
+  speech?: SpeechService
 }
 
 /** The values read from tutor.config.json, with defaults applied. */
@@ -34,6 +38,9 @@ interface ApiConfig {
   vault: string
   claudeBin: string
   timezone: string
+  ffmpegBin: string
+  whisperBin: string
+  whisperModel: string
 }
 
 /** Everything the route handlers share, built once on the first request. */
@@ -43,6 +50,7 @@ interface ApiContext {
   store: StateStore
   study: StudyService
   reading: ReadingService
+  speech: SpeechService
   today: () => string
 }
 
@@ -63,6 +71,9 @@ export function loadConfig(file: string): ApiConfig {
     vault: expandHome(vault),
     claudeBin: expandHome(typeof raw.claudeBin === 'string' && raw.claudeBin ? raw.claudeBin : '~/.local/bin/claude'),
     timezone: typeof raw.timezone === 'string' && raw.timezone ? raw.timezone : 'Asia/Ho_Chi_Minh',
+    ffmpegBin: expandHome(typeof raw.ffmpegBin === 'string' && raw.ffmpegBin ? raw.ffmpegBin : '/opt/homebrew/bin/ffmpeg'),
+    whisperBin: expandHome(typeof raw.whisperBin === 'string' && raw.whisperBin ? raw.whisperBin : '/opt/homebrew/bin/whisper-cli'),
+    whisperModel: expandHome(typeof raw.whisperModel === 'string' && raw.whisperModel ? raw.whisperModel : '~/.cache/whisper/ggml-large-v3-turbo.bin'),
   }
 }
 
@@ -106,7 +117,14 @@ export function createApiMiddleware(
       today,
     })
     const reading = createReadingService({ vault: config.vault, tutor, store, claude, today })
-    return { config, tutor, store, study, reading, today }
+    const speech = deps.speech ?? createSpeech({
+      dir: path.join(paths.dataDir, 'audio'),
+      ffmpegBin: config.ffmpegBin,
+      whisperBin: config.whisperBin,
+      model: config.whisperModel,
+    })
+    speech.prune()
+    return { config, tutor, store, study, reading, speech, today }
   }
 
   /** Handles one API request, mapping every failure onto a JSON response. */
@@ -114,7 +132,7 @@ export function createApiMiddleware(
     try {
       if (!notCrossSite(req) || (req.method === 'POST' && !sameOrigin(req))) return send(res, 403, { error: 'forbidden origin' })
       const ctx = await context()
-      const body = req.method === 'POST' ? await readJson(req) : undefined
+      const body = req.method !== 'POST' ? undefined : url.pathname === '/api/speech' ? await readAudio(req) : await readJson(req)
       await dispatch(ctx, req, res, url, body)
     } catch (err) {
       fail(res, err)
@@ -153,8 +171,15 @@ export function createApiMiddleware(
             q: field(body, 'q'),
             kind: kindOf(field(body, 'kind')),
             answer: field(body, 'answer'),
+            voice: voiceOf(record(body).voice),
           }),
         )
+      case 'POST /api/speech':
+        return send(res, 200, { id: await ctx.speech.save(body as Buffer) })
+      case 'POST /api/speech/transcribe':
+        return send(res, 200, { text: await ctx.speech.transcribe(field(body, 'id'), hintOf(record(body).hint)) })
+      case 'GET /api/speech/audio':
+        return sendAudio(req, res, ctx.speech.file(query(url, 'id')))
       case 'POST /api/attempt/retry':
         return send(res, 200, await ctx.study.retry(field(body, 'id')))
       case 'POST /api/attempt/confirm':
@@ -339,6 +364,25 @@ function readBody(req: IncomingMessage, limit = 1_000_000): Promise<string> {
   })
 }
 
+/** Collects a recording upload, refusing an empty body or anything far past the two-minute limit. */
+function readAudio(req: IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    let size = 0
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length
+      if (size > MAX_AUDIO_BYTES) {
+        req.destroy()
+        reject(new HttpError(413, 'recording too large'))
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => (size ? resolve(Buffer.concat(chunks)) : reject(new HttpError(400, 'empty recording'))))
+    req.on('error', reject)
+  })
+}
+
 /** Parses a JSON request body, treating an empty body as `{}`. */
 async function readJson(req: IncomingMessage): Promise<unknown> {
   const text = await readBody(req)
@@ -425,6 +469,21 @@ function pretestAnswer(value: unknown): string | null {
   return value
 }
 
+/** Validates the optional voice part of an answer. */
+function voiceOf(value: unknown): Voice | undefined {
+  if (value === undefined) return undefined
+  const v = record(value)
+  if (!isAudioId(v.audio) || typeof v.seconds !== 'number' || !(v.seconds > 0) || v.seconds > 600) {
+    throw new HttpError(400, 'bad voice')
+  }
+  return { audio: v.audio, seconds: v.seconds }
+}
+
+/** The topic words passed to Whisper, bounded because they cost model context. */
+function hintOf(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim().slice(0, 200) : undefined
+}
+
 /** The reading service's last Claude failure in the health shape. */
 function readingError(ctx: ApiContext): Attempt['error'] | null {
   const e = ctx.reading.lastError()
@@ -451,6 +510,27 @@ function sendImage(res: ServerResponse, image: { file: string; type: string } | 
   res.setHeader('X-Content-Type-Options', 'nosniff')
   if (image.type === 'image/svg+xml') res.setHeader('Content-Security-Policy', 'sandbox')
   res.end(fs.readFileSync(image.file))
+}
+
+/** Streams a recording, honouring a byte range so the player can seek. */
+function sendAudio(req: IncomingMessage, res: ServerResponse, file: string | null): void {
+  if (!file) return send(res, 404, { error: 'not found' })
+  const size = fs.statSync(file).size
+  const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '')
+  const start = range?.[1] ? Number(range[1]) : range?.[2] ? Math.max(0, size - Number(range[2])) : 0
+  const end = range?.[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1
+  if (start > end) {
+    res.statusCode = 416
+    res.setHeader('Content-Range', `bytes */${size}`)
+    return void res.end()
+  }
+  res.statusCode = range ? 206 : 200
+  res.setHeader('Content-Type', 'audio/mp4')
+  res.setHeader('Accept-Ranges', 'bytes')
+  res.setHeader('Cache-Control', 'private, max-age=3600')
+  res.setHeader('Content-Length', end - start + 1)
+  if (range) res.setHeader('Content-Range', `bytes ${start}-${end}/${size}`)
+  fs.createReadStream(file, { start, end }).pipe(res)
 }
 
 /** Validates a settings patch and keeps only the known keys. */
@@ -495,5 +575,6 @@ function fail(res: ServerResponse, err: unknown): void {
   if (err instanceof ClaudeError) return send(res, 503, { error: err.message, code: err.code })
   if (err instanceof TutorCliError) return send(res, 502, { error: err.message })
   if (err instanceof BadPath) return send(res, 400, { error: 'bad path' })
+  if (err instanceof SpeechError) return send(res, err.code === 'not-found' ? 404 : 422, { error: err.message, code: err.code })
   return send(res, 500, { error: err instanceof Error ? err.message : String(err) })
 }

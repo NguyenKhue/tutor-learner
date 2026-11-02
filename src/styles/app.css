@@ -215,6 +215,22 @@ td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 /* study page */
 .study { display: grid; gap: 16px; margin-top: 26px; }
 .study .prompt { margin: 0; font-size: 15.5px; }
+.study .prompt.big { font: 600 20px/1.35 var(--font-ui); letter-spacing: -0.01em; }
+.speak { display: grid; gap: 12px; min-width: 0; }
+.speak audio, .voice audio { width: 100%; height: 40px; }
+.speak-start { justify-self: start; padding: 13px 18px; font-size: 15px; }
+.speak-time { font: 600 32px/1 var(--font-mono); text-align: center; font-variant-numeric: tabular-nums; }
+.btn.stop { background: var(--again); border-color: var(--again); color: var(--surface); }
+.time-band { display: grid; gap: 6px; padding-bottom: 2px; }
+.time-track { position: relative; height: 10px; border-radius: 5px; background: var(--line); overflow: hidden; }
+.time-zone { position: absolute; top: 0; bottom: 0; background: var(--accent-line); }
+.time-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); opacity: 0.85; transition: width 200ms linear; }
+.time-ticks { position: relative; height: 12px; font: 500 11px/1 var(--font-mono); color: var(--muted); }
+.time-ticks span { position: absolute; transform: translateX(-50%); }
+.time-ticks span:first-child { transform: none; }
+.time-ticks span:last-child { transform: translateX(-100%); }
+.transcript { margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 14.5px; line-height: 1.55; overflow-wrap: anywhere; }
+.card-foot { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
 .step { display: grid; gap: 14px; }
 .kbd-hint { color: var(--muted); font-size: 12.5px; }
 .pretest-feedback { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); border: 1px solid var(--accent-line); font-size: 14px; }

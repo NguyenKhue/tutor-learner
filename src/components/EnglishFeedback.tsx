@@ -8,7 +8,7 @@ export function EnglishFeedback({ attempt }: { attempt: Attempt }) {
     <section className="english" aria-labelledby="english-h">
       <h3 id="english-h">English</h3>
       <div className="eng-row">
-        <span className="grade-label">You wrote</span>
+        <span className="grade-label">{attempt.voice ? 'You said' : 'You wrote'}</span>
         <span>{attempt.answer}</span>
       </div>
       <div className="eng-row">

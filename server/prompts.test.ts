@@ -93,3 +93,11 @@ test('grade asks for a sample answer', () => {
   const p = buildGradePrompt({ ...ctx(), question: open('q1'), answer: 'x', english: false })
   expect(p).toContain('sample = ')
 })
+
+test('a spoken answer is flagged and gets no punctuation notes', () => {
+  const p = buildGradePrompt({ ...ctx(), question: open('q1'), answer: 'x', english: true, spoken: true })
+  expect(p).toContain('speech recognition wrote it down')
+  expect(p).toContain('never comment on punctuation')
+  const typed = buildGradePrompt({ ...ctx(), question: open('q1'), answer: 'x', english: true })
+  expect(typed).not.toContain('speech recognition')
+})

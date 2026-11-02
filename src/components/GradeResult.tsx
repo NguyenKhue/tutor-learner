@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { clock, lengthNote } from '../lib/speakingTime'
 import type { Attempt } from '../lib/types'
 import { EnglishFeedback } from './EnglishFeedback'
 import { SampleAnswer } from './SampleAnswer'
@@ -60,6 +61,13 @@ export function GradeResult({ attempt, busy = false, onContinue, onRetry, onAppe
           <span>{attempt.record.status}</span>
           {attempt.record.next_review && <span>Next review: {attempt.record.next_review}</span>}
           {attempt.record.passed_gate && <span className="win">Mastered!</span>}
+        </div>
+      )}
+
+      {attempt.voice && (
+        <div className="voice grade-block">
+          <div className="grade-label">Your recording · {clock(attempt.voice.seconds)}, {lengthNote(attempt.voice.seconds)}</div>
+          <audio controls preload="metadata" src={`/api/speech/audio?id=${attempt.voice.audio}`} />
         </div>
       )}
 

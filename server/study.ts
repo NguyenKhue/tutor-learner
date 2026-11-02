@@ -1,4 +1,4 @@
-import type { Attempt, EnglishNotes, Grade, HistoryEntry, Point, Question, QuestionBank, RecordResult, Settings } from '../src/lib/types'
+import type { Attempt, EnglishNotes, Grade, HistoryEntry, Point, Question, QuestionBank, RecordResult, Settings, Voice } from '../src/lib/types'
 import { ClaudeError } from './claude'
 import type { PromptContext } from './prompts'
 import {
@@ -36,6 +36,7 @@ export interface SubmitArgs {
   q: string
   kind: 'learn' | 'review'
   answer: string
+  voice?: Voice
 }
 
 /** Everything the study service needs from the outside world. */
@@ -244,7 +245,7 @@ export function createStudyService(deps: StudyDeps): StudyService {
       const english = (await store.read()).settings.englishFeedback
       const ctx = await contextFor(attempt.point)
       const r = await ask<GradeResponse>(
-        buildGradePrompt({ ...ctx, question, answer: attempt.answer, english }),
+        buildGradePrompt({ ...ctx, question, answer: attempt.answer, english, spoken: !!attempt.voice }),
         GRADE_SCHEMA,
       )
       attempt.grade = r.grade
@@ -374,7 +375,7 @@ export function createStudyService(deps: StudyDeps): StudyService {
         const english = state.settings.englishFeedback
         const ctx = await contextFor(attempt.point)
         const r = await ask<GradeResponse>(
-          buildGradePrompt({ ...ctx, question: question!, answer: attempt.answer, english, appeal: reason }),
+          buildGradePrompt({ ...ctx, question: question!, answer: attempt.answer, english, spoken: !!attempt.voice, appeal: reason }),
           GRADE_SCHEMA,
         )
         attempt.grade = r.grade
@@ -417,6 +418,7 @@ export function createStudyService(deps: StudyDeps): StudyService {
         answer: a.answer,
         date: today(),
         state: 'pending',
+        ...(a.voice ? { voice: a.voice } : {}),
       }
       await saveAttempt(attempt)
       return await gradeAttempt(attempt, question)

@@ -16,10 +16,11 @@ type ErrorBody = { error?: string; code?: string }
 
 /** Sends one JSON request and returns the decoded 2xx body; anything else throws ApiError. */
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const blob = body instanceof Blob
   const res = await fetch(path, {
     method,
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' }, // the browser adds Origin itself
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: body === undefined || blob ? undefined : { 'Content-Type': 'application/json' }, // the browser adds Origin itself
+    body: body === undefined || blob ? body : JSON.stringify(body),
   })
   const data: unknown = await res.json().catch(() => null)
   if (!res.ok) {
@@ -33,4 +34,6 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export const api = {
   get: <T>(path: string) => request<T>('GET', path),
   post: <T>(path: string, body: unknown) => request<T>('POST', path, body),
+  /** Sends raw bytes such as a recording. */
+  upload: <T>(path: string, body: Blob) => request<T>('POST', path, body),
 }

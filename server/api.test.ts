@@ -9,6 +9,7 @@ import { createApiMiddleware } from './api'
 import { ClaudeError } from './claude'
 import { GRADE_SCHEMA, LESSON_SCHEMA, QUESTIONS_SCHEMA } from './prompts'
 import { CLASSIFY_SCHEMA, READING_GRADE_SCHEMA, READING_QUIZ_SCHEMA } from './reading/prompts'
+import { SpeechError, type SpeechService } from './speech'
 import { makeTestVault } from './testVault'
 
 const DATE = '2026-10-22'
@@ -19,6 +20,24 @@ afterEach(async () => {
   for (const c of cleanups.reverse()) await c()
   cleanups = []
 })
+
+const AUDIO_ID = '11111111-1111-4111-8111-111111111111'
+
+/** A speech service that keeps one fixed recording in `file`. */
+function fakeSpeech(file: string): SpeechService {
+  return {
+    save: async (audio) => {
+      fs.writeFileSync(file, audio)
+      return AUDIO_ID
+    },
+    transcribe: async (id, hint) => {
+      if (id !== AUDIO_ID) throw new SpeechError('not-found', 'gone')
+      return `heard ${hint}`
+    },
+    file: (id) => (id === AUDIO_ID && fs.existsSync(file) ? file : null),
+    prune: () => {},
+  }
+}
 
 async function start(opts: { claudeFail?: ClaudeError; prefetch?: boolean } = {}) {
   const v = makeTestVault(
@@ -50,7 +69,7 @@ async function start(opts: { claudeFail?: ClaudeError; prefetch?: boolean } = {}
     claudeCalls.push(schema)
     return counted<T>(prompt, schema)
   }
-  const mw = createApiMiddleware({ configFile, dataDir }, { claude: claudeFn, today: () => day, prefetch: opts.prefetch ?? false })
+  const mw = createApiMiddleware({ configFile, dataDir }, { claude: claudeFn, today: () => day, prefetch: opts.prefetch ?? false, speech: fakeSpeech(path.join(dataDir, 'clip.m4a')) })
   const server = http.createServer((req, res) => mw(req as never, res as never, () => {
     res.statusCode = 404
     res.end('next')
@@ -261,4 +280,38 @@ test('opening the reading tab does not start the first classification', async ()
   await s.get('/api/reading')
   await new Promise((r) => setTimeout(r, 300))
   expect(s.claudeCalls.length).toBe(before + 1)
+})
+
+test('a recording is saved, written down, served with ranges and attached to the answer', async () => {
+  const { base } = await start()
+  const headers = { Origin: base }
+  const saved = await fetch(`${base}/api/speech`, { method: 'POST', headers, body: Buffer.from('0123456789') })
+  expect(await saved.json()).toEqual({ id: AUDIO_ID })
+
+  const text = await fetch(`${base}/api/speech/transcribe`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: AUDIO_ID, hint: 'Coroutines' }) })
+  expect(await text.json()).toEqual({ text: 'heard Coroutines' })
+
+  const whole = await fetch(`${base}/api/speech/audio?id=${AUDIO_ID}`)
+  expect(whole.status).toBe(200)
+  expect(whole.headers.get('content-type')).toBe('audio/mp4')
+  const part = await fetch(`${base}/api/speech/audio?id=${AUDIO_ID}`, { headers: { Range: 'bytes=2-4' } })
+  expect(part.status).toBe(206)
+  expect(part.headers.get('content-range')).toBe('bytes 2-4/10')
+  expect(await part.text()).toBe('234')
+  expect((await fetch(`${base}/api/speech/audio?id=${AUDIO_ID}`, { headers: { Range: 'bytes=20-' } })).status).toBe(416)
+  expect((await fetch(`${base}/api/speech/audio?id=nope`)).status).toBe(404)
+
+  await fetch(`${base}/api/bank?point=${encodeURIComponent(P1)}`)
+  const body = { point: P1, q: 'q2', kind: 'learn', answer: 'spoken', voice: { audio: AUDIO_ID, seconds: 42 } }
+  const answered = await fetch(`${base}/api/answer`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  expect((await answered.json()).voice).toEqual({ audio: AUDIO_ID, seconds: 42 })
+
+  const bad = await fetch(`${base}/api/answer`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, voice: { audio: '../x', seconds: 1 } }) })
+  expect(bad.status).toBe(400)
+})
+
+test('a recording from another site, or an empty one, is refused', async () => {
+  const { base } = await start()
+  expect((await fetch(`${base}/api/speech`, { method: 'POST', headers: { Origin: 'http://evil.test' }, body: 'x' })).status).toBe(403)
+  expect((await fetch(`${base}/api/speech`, { method: 'POST', headers: { Origin: base } })).status).toBe(400)
 })

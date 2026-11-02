@@ -253,3 +253,28 @@ test('no sample section when the grade has none', async () => {
   await screen.findByText('Correct')
   expect(screen.queryByRole('region', { name: 'Sample answer' })).toBeNull()
 })
+
+test('a spoken answer in the result shows You said, the length and the recording', async () => {
+  mockApi(routes(open, { 'GET /api/open-attempts': [attempt({ voice: { audio: 'a', seconds: 42 }, english: { corrected: 'Better.', notes: [] } })] }))
+  goTo(URL_REVIEW)
+  render(<App />)
+  expect(await screen.findByText('You said')).toBeInTheDocument()
+  expect(screen.getByText('Your recording · 0:42, good length')).toBeInTheDocument()
+  expect(document.querySelector('audio')).toHaveAttribute('src', '/api/speech/audio?id=a')
+})
+
+test('where the browser can record, written questions open in speaking mode and typing is remembered', async () => {
+  vi.stubGlobal('MediaRecorder', class {})
+  Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => ({}) } })
+  localStorage.removeItem('tutor.answerMode')
+  mockApi(routes(open))
+  goTo(URL_REVIEW)
+  render(<App />)
+  await screen.findByRole('button', { name: 'Start speaking' })
+  await userEvent.click(screen.getByRole('button', { name: 'Type instead' }))
+  expect(screen.getByRole('textbox')).toBeInTheDocument()
+  expect(localStorage.getItem('tutor.answerMode')).toBe('type')
+  await userEvent.click(screen.getByRole('button', { name: 'Speak instead' }))
+  expect(await screen.findByRole('button', { name: 'Start speaking' })).toBeInTheDocument()
+  Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: undefined })
+})

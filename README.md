@@ -38,6 +38,7 @@ Topics and points are created in the terminal with the Claude Code `tutor` skill
   source notes and saved to `Tutor/Lessons/`, the **main question**, then the **result**. A due point skips the
   first two steps. Multiple-choice answers are graded in code. Written answers are graded by Claude against criteria
   fixed when the question was made.
+- **Speaking:** written questions open in speaking mode. Press **Start speaking** and answer in English while a bar shows the 0:30–1:00 target (it stops by itself at 2:00). Whisper writes down what you said on this Mac, you listen back once, then ask for feedback. **Type instead** switches to the text box. Recordings stay in the app data folder for 30 days, are never added to the vault or the backups, and nothing is sent to a speech service. Claude only reads the text, so pronunciation is not graded.
 - **English feedback:** for a written answer, you see your text, a corrected version and up to 3 short notes. It is kept
   apart from the score and can be turned off in Settings.
 - **Fair grading:** a failed written answer waits until you press "Continue" or "I think this is right". The second
@@ -77,7 +78,7 @@ Obsidian vault ── Tutor/Points/*.md ◀── tutor.py record (only writer o
 
 ## Getting started
 
-Requirements: Node 22+, `python3`, and Claude Code at `~/.local/bin/claude`, logged in.
+Requirements: Node 22+, `python3`, and Claude Code at `~/.local/bin/claude`, logged in. Speaking also needs `whisper-cli`, `ffmpeg` and a Whisper model; the defaults are `/opt/homebrew/bin/whisper-cli`, `/opt/homebrew/bin/ffmpeg` and `~/.cache/whisper/ggml-large-v3-turbo.bin`, and `tutor.config.json` can change them with `whisperBin`, `ffmpegBin` and `whisperModel`.
 
 1. Point the app at the vault in `tutor.config.json`:
 
@@ -128,6 +129,7 @@ Tests never touch the real vault and never call the real `claude`.
 | `server/tutor.ts` | runs `tutor.py`, one `record` at a time |
 | `server/claude.ts` | runs `claude -p`, timeout, retries, error kinds |
 | `server/prompts.ts` | prompts and JSON schemas for lessons, question banks and grading |
+| `server/speech.ts` | saves recordings, runs `ffmpeg` and `whisper-cli`, removes old audio |
 | `server/study.ts` | the study flow: lessons, banks, answers, grading, recording, prefetch |
 | `server/vault.ts`, `server/roadmap.ts` | wikilinks, point text, lesson files, `topic_order` |
 | `server/reading/` | Reading tab: catalog scan, classification and quiz prompts, service, vault images |
