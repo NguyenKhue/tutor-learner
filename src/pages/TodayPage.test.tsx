@@ -31,7 +31,7 @@ test('shows countdown and done count', async () => {
   mockApi({ 'GET /api/overview': overview() })
   goTo('/')
   render(<App />)
-  expect(await screen.findByText('77 days to interview')).toBeInTheDocument()
+  expect((await screen.findByText('77')).parentElement).toHaveTextContent('77 days to interview')
   expect(screen.getByText('1 of 3 done today')).toBeInTheDocument()
 })
 
@@ -88,6 +88,14 @@ test('a finished day says so', async () => {
   goTo('/')
   render(<App />)
   expect(await screen.findByText('All done for today')).toBeInTheDocument()
+  expect(screen.getByText(/You finished all 1\./)).toBeInTheDocument()
+})
+
+test('a day with no streak invites one', async () => {
+  mockApi({ 'GET /api/overview': makeOverview() })
+  goTo('/')
+  render(<App />)
+  expect(await screen.findByText('Start a streak today')).toBeInTheDocument()
 })
 
 test('shows a load error', async () => {

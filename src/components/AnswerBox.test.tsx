@@ -35,7 +35,7 @@ function Host({ start = '', onBusy }: { start?: string; onBusy?: (busy: boolean)
 const box = () => screen.getByRole('textbox', { name: 'Your answer' })
 
 async function speak() {
-  await userEvent.click(screen.getByRole('button', { name: /Start speaking|Record again/ }))
+  await userEvent.click(screen.getByRole('button', { name: /^Speak/ }))
   await userEvent.click(await screen.findByRole('button', { name: 'Stop' }))
 }
 
@@ -88,7 +88,7 @@ test('recording again replaces the words of the old recording', async () => {
 test('the page knows while a recording runs', async () => {
   const onBusy = vi.fn()
   render(<Host onBusy={onBusy} />)
-  await userEvent.click(screen.getByRole('button', { name: 'Start speaking' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Speak' }))
   await screen.findByRole('button', { name: 'Stop' })
   expect(onBusy).toHaveBeenLastCalledWith(true)
   fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
@@ -125,7 +125,7 @@ test('a blocked microphone says so and the box still takes typing', async () => 
     value: { getUserMedia: async () => { throw new DOMException('no', 'NotAllowedError') } },
   })
   render(<Host />)
-  await userEvent.click(screen.getByRole('button', { name: 'Start speaking' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Speak' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('microphone is blocked')
   await userEvent.type(box(), 'typed')
   expect(box()).toHaveValue('typed')
@@ -134,6 +134,6 @@ test('a blocked microphone says so and the box still takes typing', async () => 
 test('without a microphone API there is no mic button', () => {
   vi.stubGlobal('MediaRecorder', undefined)
   render(<Host />)
-  expect(screen.queryByRole('button', { name: 'Start speaking' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Speak' })).toBeNull()
   expect(box()).toHaveAttribute('placeholder', 'Type your answer…')
 })

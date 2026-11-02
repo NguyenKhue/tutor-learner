@@ -114,7 +114,7 @@ export function SettingsPage() {
               onChange={(e) => setReadingPerDay(e.target.value)}
             />
           </div>
-          <div className="field">
+          <div className="field inline">
             <label htmlFor="english-feedback">English feedback</label>
             <input
               id="english-feedback"
@@ -134,6 +134,7 @@ export function SettingsPage() {
         <div className="panel">
           <div className="field">
             <span className="field-label">Theme</span>
+            <p className="hint">Changes right away.</p>
             <span className="theme" role="group" aria-label="Theme">
               {THEMES.map(([t, label]) => (
                 <button
@@ -160,7 +161,7 @@ export function SettingsPage() {
           <div className="field">
             <label>Claude</label>
             <p className="hint">
-              {claude?.lastError != null ? `Claude: last error — ${claude.lastError.message}` : 'Claude: OK'}
+              {claude?.lastError != null ? `Last error: ${claude.lastError.message}` : 'OK'}
             </p>
           </div>
         </div>

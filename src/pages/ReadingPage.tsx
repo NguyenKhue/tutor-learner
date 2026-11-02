@@ -18,7 +18,7 @@ function NextNote({ item, onSkip }: { item: ReadingItem; onSkip(): void }) {
       </div>
       {item.why && <p className="next-why">{item.why}</p>}
       <div className="row spread">
-        <Link className="btn primary" to={readHref(item.path)} aria-label={`Read ${item.title}`}>Read</Link>
+        <Link className="btn primary wide" to={readHref(item.path)} aria-label={`Read ${item.title}`}>Read</Link>
         <button type="button" className="btn ghost" onClick={onSkip}>Skip</button>
       </div>
     </div>

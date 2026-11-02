@@ -8,3 +8,6 @@ export function pointTitle(id: string): string {
 export function obsidianUrl(vaultName: string, relPath: string): string {
   return 'obsidian://open?vault=' + encodeURIComponent(vaultName) + '&file=' + encodeURIComponent(relPath.replace(/\.md$/, ''))
 }
+
+/** A status as a word for people. */
+export const STATUS_LABEL = { new: 'New', learning: 'Learning', mastered: 'Mastered' } as const

@@ -292,7 +292,7 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
               <AnswerBox value={textAnswer} onChange={setTextAnswer} onSubmit={submit} hint={speechHint} voice={voice} onVoice={setVoice} onBusy={setSpeechBusy} />
             )}
             <div className="row">
-              <button type="button" className="btn primary" disabled={!canSubmit || busy || speechBusy} onClick={submit}>
+              <button type="button" className="btn primary wide" disabled={!canSubmit || busy || speechBusy} onClick={submit}>
                 Submit
               </button>
               {question.kind === 'mcq' && <span className="kbd-hint">Press 1–4 to pick an answer.</span>}

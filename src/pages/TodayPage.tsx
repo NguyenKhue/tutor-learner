@@ -54,6 +54,11 @@ export function TodayPage() {
 
   return (
     <div className="today">
+      <div className="day-head">
+        {interviewDays !== null && <p className="day-count"><b>{interviewDays}</b> days to interview</p>}
+        <p className="streak-chip">{days > 0 ? `${days}-day streak` : 'Start a streak today'}</p>
+      </div>
+
       {next ? (
         <section className="card next" aria-labelledby="next-h">
           <div className="eyebrow">{`Next · ${next.label}`}</div>
@@ -61,25 +66,27 @@ export function TodayPage() {
           {next.topic && <p className="next-topic">{next.topic}</p>}
           <Link className="btn primary wide" to={next.href}>Start</Link>
         </section>
+      ) : total > 0 ? (
+        <section className="card next finished" aria-labelledby="next-h">
+          <span className="finish-mark" aria-hidden="true">✓</span>
+          <h1 id="next-h">All done for today</h1>
+          <p className="next-topic">{`You finished all ${total}. Come back tomorrow to keep your streak.`}</p>
+        </section>
       ) : (
         <section className="card next" aria-labelledby="next-h">
-          <div className="eyebrow">Today</div>
-          <h1 id="next-h">{total > 0 ? 'All done for today' : 'Nothing left today.'}</h1>
+          <h1 id="next-h">Nothing left today.</h1>
           <p className="next-topic">Add one more point if you still have time.</p>
         </section>
       )}
 
       {total > 0 && (
         <div className="day-status" aria-label="Today's progress">
-          <div className="row spread">
-            <span>{`${done} of ${total} done today`}</span>
-            {interviewDays !== null && <span>{`${interviewDays} days to interview`}</span>}
+          <span>{`${done} of ${total} done today`}</span>
+          <div className="segs" aria-hidden="true">
+            {rows.map((r, i) => <i key={r.id} className={i < done ? 'on' : ''} />)}
           </div>
-          <div className="bar"><i style={{ width: `${Math.round((done / total) * 100)}%` }} /></div>
         </div>
       )}
-      {total === 0 && interviewDays !== null && <p className="hint">{`${interviewDays} days to interview`}</p>}
-      {days > 0 && <p className="streak-chip">{`${days}-day streak`}</p>}
 
       {rows.length > (next ? 1 : 0) && (
         <ul className="queue" aria-label="Today's list">

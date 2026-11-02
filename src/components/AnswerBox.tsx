@@ -116,7 +116,7 @@ export function AnswerBox({ value, onChange, onSubmit, ariaLabel = 'Your answer'
             <span className="hint">
               <b className="mono" role="timer">{clock(recorder.seconds)}</b> · {timeHint(recorder.seconds)}
             </span>
-            <button type="button" className="mic stop" aria-label="Stop" onClick={recorder.stop}><i /></button>
+            <button type="button" className="btn stop" onClick={recorder.stop}>Stop</button>
           </div>
         </div>
       ) : (
@@ -134,11 +134,12 @@ export function AnswerBox({ value, onChange, onSubmit, ariaLabel = 'Your answer'
           <div className="answer-tools">
             {working ? <Working text="Writing down what you said" /> : <span className="hint">{note}</span>}
             {speakable && (
-              <button type="button" className="mic" aria-label={voice ? 'Record again' : 'Start speaking'} disabled={working} onClick={start}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <button type="button" className={value.trim() ? 'btn' : 'btn primary'} disabled={working} onClick={start}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                   <rect x="9" y="3" width="6" height="11" rx="3" />
                   <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
                 </svg>
+                {voice ? 'Speak again' : 'Speak'}
               </button>
             )}
           </div>

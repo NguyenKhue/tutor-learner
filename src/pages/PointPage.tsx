@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import { useTutorData } from '../hooks/useTutorData'
-import { obsidianUrl, pointTitle } from '../lib/format'
+import { STATUS_LABEL, obsidianUrl, pointTitle } from '../lib/format'
 import type { Attempt } from '../lib/types'
 import { Skeleton } from '../components/Loading'
 
@@ -14,6 +14,9 @@ function wikilinkTarget(source: string): string | null {
   const inner = /^\[\[(.+)\]\]$/.exec(source)?.[1]
   return inner ? inner.split('#')[0].split('|')[0] : null
 }
+
+/** The readable name of a stored wikilink. */
+const noteName = (source: string) => (wikilinkTarget(source) as string).split('/').pop()
 
 /** Point: its facts, the point's answer history, past attempts from the web and Obsidian links. */
 export function PointPage() {
@@ -47,14 +50,13 @@ export function PointPage() {
   const sources = point.sources.filter((s) => wikilinkTarget(s) !== null)
   return (
     <>
+      <Link className="back page-back" to={`/topics/${encodeURIComponent(point.topic)}`}>{`← ${point.topic}`}</Link>
       <header className="page-head">
         <h1>{pointTitle(point.id)}</h1>
         <div className="meta">
-          <span>{point.topic}</span>
-          <span className="tag">{point.type}</span>
-          <span className={'tag ' + point.status}>{point.status}</span>
+          <span>{STATUS_LABEL[point.status]}</span>
           <span className="mastery-pct">{Math.round(point.mastery * 100)}%</span>
-          <span>Next review {point.next_review ?? '—'}</span>
+          {point.next_review && <span>Next review {point.next_review}</span>}
         </div>
       </header>
 
@@ -74,7 +76,7 @@ export function PointPage() {
             <ul className="subs">
               {sources.map((s) => (
                 <li key={s}>
-                  <a href={obsidianUrl(data.vaultName, wikilinkTarget(s) as string)}>{s}</a>
+                  <a href={obsidianUrl(data.vaultName, wikilinkTarget(s) as string)}>{noteName(s)}</a>
                 </li>
               ))}
             </ul>
@@ -86,32 +88,18 @@ export function PointPage() {
           {point.history.length === 0 ? (
             <p className="hint">Nothing yet.</p>
           ) : (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Kind</th>
-                    <th>Result</th>
-                    <th>Question</th>
-                    <th>Why</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {point.history.map((h, i) => (
-                    <tr key={`${h.d}-${i}`}>
-                      <td>{h.d}</td>
-                      <td>
-                        <span className="tag">{h.kind}</span>
-                      </td>
-                      <td>{h.ok ? 'Correct' : 'Wrong'}</td>
-                      <td className="num">{h.q}</td>
-                      <td>{h.why}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ul className="log">
+              {point.history.map((h, i) => (
+                <li key={`${h.d}-${i}`}>
+                  <div className="log-head">
+                    <b className={h.ok ? 'right' : 'wrong'}>{h.ok ? 'Correct' : 'Not yet'}</b>
+                    <span className="hint">{h.d}</span>
+                    <span className="hint">{h.kind === 'review' ? 'Review' : 'Learn'}</span>
+                  </div>
+                  <p>{h.why}</p>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
 
@@ -127,26 +115,15 @@ export function PointPage() {
           ) : attempts.length === 0 ? (
             <p className="hint">No answers from the web yet.</p>
           ) : (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Answer</th>
-                    <th>Why</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {attempts.map((a) => (
-                    <tr key={a.id}>
-                      <td>{a.date}</td>
-                      <td>{a.answer}</td>
-                      <td>{a.grade?.why ?? a.error?.message ?? '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ul className="log">
+              {attempts.map((a) => (
+                <li key={a.id}>
+                  <div className="log-head"><span className="hint">{a.date}</span></div>
+                  <p>{a.answer}</p>
+                  <p className="hint">{a.grade?.why ?? a.error?.message ?? ''}</p>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
       </div>

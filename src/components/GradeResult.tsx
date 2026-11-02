@@ -60,7 +60,7 @@ export function GradeResult({ attempt, busy = false, onContinue, onRetry, onAppe
       )}
 
       {(attempt.english || attempt.voice) && (
-        <details className="more">
+        <details className="more" open={!!attempt.english}>
           <summary>{attempt.english ? 'Your English' : 'Your recording'}</summary>
           {attempt.voice && (
             <div className="voice grade-block">

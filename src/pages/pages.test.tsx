@@ -47,6 +47,7 @@ test('topic page lists its points with links', async () => {
   expect(await screen.findByRole('link', { name: 'Null safety' })).toHaveAttribute('href', `/point/${encodeURIComponent(P1)}`)
   expect(screen.getByRole('link', { name: 'Data classes' })).toBeInTheDocument()
   expect(screen.getByText('50%')).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: '← Topics' })).toHaveAttribute('href', '/topics')
 })
 
 test('point page shows history', async () => {
@@ -60,7 +61,7 @@ test('point page shows history', async () => {
     'href',
     'obsidian://open?vault=Khue%20Vault&file=Tutor%2FLessons%2FKotlin%20Language%2F01%20Null%20safety',
   )
-  expect(screen.getByRole('link', { name: '[[Books/Kotlin/Null]]' })).toHaveAttribute('href', 'obsidian://open?vault=Khue%20Vault&file=Books%2FKotlin%2FNull')
+  expect(screen.getByRole('link', { name: 'Null' })).toHaveAttribute('href', 'obsidian://open?vault=Khue%20Vault&file=Books%2FKotlin%2FNull')
 })
 
 test('progress page says whether the pace is enough', async () => {
@@ -130,5 +131,5 @@ test('settings toggles english feedback', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Save' }))
   await screen.findByText('Saved')
   expect(calls.find((c) => c.method === 'POST')!.body).toEqual({ newPerDay: 3, englishFeedback: false, readingReviewsPerDay: 3 })
-  expect(screen.getByText(/Claude: OK/)).toBeInTheDocument()
+  expect(screen.getByText('OK')).toBeInTheDocument()
 })

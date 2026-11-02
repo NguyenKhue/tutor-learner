@@ -244,6 +244,16 @@ test('shows the sample answer after grading', async () => {
   expect(region).toHaveTextContent('A strong answer says a and b.')
 })
 
+test('english notes are open, the sample answer stays folded', async () => {
+  mockApi(routes(open, { 'POST /api/answer': attempt({ grade: { ok: true, why: 'w', missing: [], feedback: 'f', sample: 'Sample.' }, english: { corrected: 'Better.', notes: [] } }) }))
+  goTo(URL_REVIEW)
+  render(<App />)
+  await userEvent.type(await screen.findByRole('textbox'), 'x')
+  await userEvent.click(screen.getByRole('button', { name: 'Submit' }))
+  expect((await screen.findByText('Your English')).closest('details')).toHaveAttribute('open')
+  expect(screen.getByText('A strong answer').closest('details')).not.toHaveAttribute('open')
+})
+
 test('no sample section when the grade has none', async () => {
   mockApi(routes(open))
   goTo(URL_REVIEW)
@@ -270,7 +280,7 @@ test('the guess box offers the mic too, and no speak or type switch exists', asy
   goTo(URL_LEARN)
   render(<App />)
   await screen.findByText('What do you already know?')
-  expect(screen.getByRole('button', { name: 'Start speaking' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Speak' })).toBeInTheDocument()
   expect(screen.getByRole('textbox', { name: 'Your guess' })).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: /Type instead|Speak instead/ })).toBeNull()
   Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: undefined })
