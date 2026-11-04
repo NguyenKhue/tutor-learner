@@ -1,10 +1,11 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import type { CatalogEntry, InterviewSetup } from '../../src/lib/types'
 import { ClaudeError } from '../claude'
 import { PLAN_SCHEMA, RESEARCH_SCHEMA, ROUND_SIZE } from './prompts'
+import * as history from './history'
 import { InterviewError, createInterviewService } from './service'
 import { createInterviewStore } from './store'
 
@@ -215,5 +216,74 @@ test('a session stuck in planning after a restart shows a retryable error', asyn
   expect((await restarted.list())[0].error?.code).toBe('failed')
   // the file itself is not rewritten
   expect((await store.read()).sessions[0].error).toBeUndefined()
-  await expect(service.answer('old', 'x')).rejects.toMatchObject({ code: 'bad-state' })
+})
+
+test('two keepResearch calls start only one plan', async () => {
+  const f = fake()
+  const { service } = make(f)
+  const created = await service.create(setup({ web: true }))
+  await service.idle()
+  const results = await Promise.allSettled([service.keepResearch(created.id, [0]), service.keepResearch(created.id, [0])])
+  expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected'])
+  await service.idle()
+  const s = await service.get(created.id)
+  expect(f.plans).toHaveLength(1)
+  expect(s.turns).toHaveLength(1)
+  expect(s.error).toBeUndefined()
+})
+
+test('keepResearch right after research finishes is never busy', async () => {
+  const f = fake()
+  const { service } = make(f)
+  const created = await service.create(setup({ web: true }))
+  for (;;) {
+    const s = await service.get(created.id)
+    if (s.state === 'review') break
+    await new Promise((r) => setTimeout(r, 0))
+  }
+  await expect(service.keepResearch(created.id, [0])).resolves.toMatchObject({ state: 'planning' })
+  await service.idle()
+})
+
+test('keepResearch checks its input and the session', async () => {
+  const { service } = make(fake())
+  await expect(service.keepResearch('nope', [0])).rejects.toMatchObject({ code: 'not-found' })
+  await expect(service.keepResearch('nope', 'x' as never)).rejects.toMatchObject({ code: 'bad-state' })
+  await expect(service.keepResearch('nope', [1.5])).rejects.toMatchObject({ code: 'bad-state' })
+})
+
+test('create checks the other setup fields and stores only known ones', async () => {
+  const f = fake()
+  const { service } = make(f)
+  await expect(service.create(setup({ topics: [1] as never }))).rejects.toMatchObject({ code: 'bad-state' })
+  await expect(service.create(setup({ source: 5 as never }))).rejects.toMatchObject({ code: 'bad-state' })
+  await expect(service.create(setup({ web: 'yes' as never }))).rejects.toMatchObject({ code: 'bad-state' })
+  await expect(service.create(setup({ readAloud: undefined as never }))).rejects.toMatchObject({ code: 'bad-state' })
+  const s = await service.create({ ...setup(), extra: 'x' } as never)
+  expect(Object.keys(s.setup).sort()).toEqual(['level', 'readAloud', 'rounds', 'source', 'topics', 'web'])
+  await service.idle()
+})
+
+test('planning puts the re-ask queue into the plan prompt', async () => {
+  const spy = vi.spyOn(history, 'reaskQueue').mockReturnValue([{ round: 'hr', prompt: 'Tell me about salary again' }])
+  try {
+    const f = fake()
+    const { service } = make(f)
+    await service.create(setup())
+    await service.idle()
+    expect(spy).toHaveBeenCalledWith(expect.any(Array), '2026-11-04', ['hr', 'technical'])
+    expect(f.plans[0].prompt).toContain('Tell me about salary again')
+  } finally {
+    spy.mockRestore()
+  }
+})
+
+test('avoid ignores sessions that are not done', async () => {
+  const f = fake()
+  const { service } = make(f)
+  await service.create(setup())
+  await service.idle()
+  await service.create(setup())
+  await service.idle()
+  expect(f.plans[1].prompt).not.toContain('Q 0-0')
 })

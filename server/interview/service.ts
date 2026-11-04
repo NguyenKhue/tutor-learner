@@ -53,15 +53,24 @@ const errorOf = (e: unknown): NonNullable<InterviewSession['error']> =>
 export function createInterviewService(deps: InterviewDeps): InterviewService {
   const { vault, store, readCatalog, claude, claudeWeb, today } = deps
   const newId = deps.newId ?? (() => crypto.randomUUID())
-  const running = new Set<string>()
+  const running = new Map<string, symbol>()
   const jobs = new Set<Promise<void>>()
 
-  function background(id: string, work: () => Promise<void>) {
-    running.add(id)
-    const job = work()
-      .catch(() => undefined)
+  /**
+   * Runs one background job per session. `work` gets a `release` it must call inside its final store update, so the
+   * session never shows a finished state while still marked running. Throws `busy` when a job is already in flight.
+   */
+  function background(id: string, work: (release: () => void) => Promise<void>) {
+    if (running.has(id)) throw new InterviewError('busy', 'Still working.')
+    const token = Symbol(id)
+    running.set(id, token)
+    const release = () => {
+      if (running.get(id) === token) running.delete(id)
+    }
+    const job = work(release)
+      .catch((e) => console.warn(`[interview] background job for ${id} failed: ${e instanceof Error ? e.message : e}`))
       .finally(() => {
-        running.delete(id)
+        release()
         jobs.delete(job)
       })
     jobs.add(job)
@@ -82,7 +91,7 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
     })
   }
 
-  async function plan(id: string) {
+  async function plan(id: string, release: () => void) {
     try {
       const file = await store.read()
       const s = file.sessions.find((x) => x.id === id)
@@ -102,6 +111,7 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
       const raw = await claude<unknown>(prompt, PLAN_SCHEMA)
       const rounds = validatePlan(raw, s.setup)
       await patch(id, (x) => {
+        release()
         x.plan = rounds
         x.state = 'running'
         x.current = { round: 0, q: '0-0', followups: 0 }
@@ -110,12 +120,13 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
       })
     } catch (e) {
       await patch(id, (x) => {
+        release()
         x.error = errorOf(e)
       })
     }
   }
 
-  async function research(id: string) {
+  async function research(id: string, release: () => void) {
     try {
       const file = await store.read()
       const s = file.sessions.find((x) => x.id === id)
@@ -125,6 +136,7 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
       const raw = await claudeWeb<unknown>(buildResearchPrompt({ setup: s.setup, vaultTopics }), RESEARCH_SCHEMA)
       const items = validateResearch(raw)
       await patch(id, (x) => {
+        release()
         x.research = items
         x.state = 'review'
         if (items.length === 0) x.error = { code: 'failed', message: 'No research found. You can start the interview without it.' }
@@ -132,6 +144,7 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
       })
     } catch (e) {
       await patch(id, (x) => {
+        release()
         x.research = []
         x.state = 'review'
         x.error = errorOf(e)
@@ -140,10 +153,22 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
   }
 
   function cleanSetup(setup: InterviewSetup): InterviewSetup {
+    const bad = (m: string) => new InterviewError('bad-state', m)
+    if (!setup || typeof setup !== 'object') throw bad('Missing setup.')
+    if (typeof setup.source !== 'string') throw bad('The job description must be text.')
+    if (!Array.isArray(setup.topics) || setup.topics.some((t) => typeof t !== 'string')) throw bad('Topics must be a list of text.')
+    if (typeof setup.web !== 'boolean' || typeof setup.readAloud !== 'boolean') throw bad('web and readAloud must be true or false.')
     if (!Array.isArray(setup.rounds) || setup.rounds.length === 0) throw new InterviewError('bad-state', 'Choose at least one round.')
     if (setup.rounds.some((r) => !ROUND_ORDER.includes(r))) throw new InterviewError('bad-state', 'Unknown round.')
     if (!LEVELS.includes(setup.level)) throw new InterviewError('bad-state', 'Unknown level.')
-    return { ...setup, rounds: ROUND_ORDER.filter((r) => setup.rounds.includes(r)) }
+    return {
+      source: setup.source,
+      level: setup.level,
+      rounds: ROUND_ORDER.filter((r) => setup.rounds.includes(r)),
+      topics: setup.topics,
+      web: setup.web,
+      readAloud: setup.readAloud,
+    }
   }
 
   async function find(id: string): Promise<InterviewSession> {
@@ -177,22 +202,22 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
       await store.update((f) => {
         f.sessions.push(session)
       })
-      background(session.id, () => (setup.web ? research(session.id) : plan(session.id)))
+      background(session.id, (release) => (setup.web ? research(session.id, release) : plan(session.id, release)))
       return session
     },
     async keepResearch(id, kept) {
-      const s = await find(id)
-      if (s.state !== 'review') throw new InterviewError('bad-state', 'This interview is not waiting for a research review.')
-      if (running.has(id)) throw new InterviewError('busy', 'Still working.')
-      const saved = await store.update((f) => {
-        const x = f.sessions.find((y) => y.id === id)!
+      if (!Array.isArray(kept) || kept.some((k) => !Number.isInteger(k))) throw new InterviewError('bad-state', 'kept must be a list of numbers.')
+      // The state check and the job start happen inside one update, so two calls cannot both start a job.
+      return store.update((f) => {
+        const x = f.sessions.find((y) => y.id === id)
+        if (!x) throw new InterviewError('not-found', 'Interview not found.')
+        if (x.state !== 'review') throw new InterviewError('bad-state', 'This interview is not waiting for a research review.')
         x.research = (x.research ?? []).map((r: ResearchItem, i) => ({ ...r, kept: kept.includes(i) }))
         x.state = 'planning'
         delete x.error
-        return x
+        background(id, (release) => plan(id, release))
+        return structuredClone(x)
       })
-      background(id, () => plan(id))
-      return saved
     },
     answer: async () => todo(),
     skip: async () => todo(),
