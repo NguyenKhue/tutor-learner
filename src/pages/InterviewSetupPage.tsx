@@ -22,6 +22,7 @@ export function InterviewSetupPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const seeded = useRef(false)
+  const touched = useRef(false) // set once Khue changes a topic chip by hand: the job description stops picking topics
 
   useEffect(() => {
     if (data && !seeded.current) {
@@ -63,7 +64,7 @@ export function InterviewSetupPage() {
           <textarea
             id="jd" rows={7} value={source}
             onChange={(e) => setSource(e.target.value)}
-            onBlur={() => setTopics(defaultTopics(source, data.topicOrder, data.export.points))}
+            onBlur={() => { if (!touched.current) setTopics(defaultTopics(source, data.topicOrder, data.export.points)) }}
           />
           <p className="hint">Paste the job post. Topics below are picked from it.</p>
         </div>
@@ -91,7 +92,7 @@ export function InterviewSetupPage() {
           <legend className="field-label">Topics</legend>
           <div className="chips">
             {data.topicOrder.map((t) => (
-              <button key={t} type="button" className="chip setup-chip" aria-pressed={topics.includes(t)} onClick={() => setTopics(toggle(topics, t))}>{t}</button>
+              <button key={t} type="button" className="chip setup-chip" aria-pressed={topics.includes(t)} onClick={() => { touched.current = true; setTopics(toggle(topics, t)) }}>{t}</button>
             ))}
           </div>
         </fieldset>
