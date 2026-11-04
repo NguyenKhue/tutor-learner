@@ -1,8 +1,12 @@
-import type { CatalogEntry, InterviewSession, InterviewSetup, ResearchItem, RoundKind, Voice } from '../../src/lib/types'
+import type { CatalogEntry, InterviewSession, InterviewSetup, PlannedRound, ResearchItem, RoundKind, Voice } from '../../src/lib/types'
 import { ClaudeError } from '../claude'
 import { buildVaultContext } from './context'
-import { reaskQueue, type WeakSpotSummary } from './history'
-import { PLAN_SCHEMA, RESEARCH_SCHEMA, TURN_SCHEMA, buildPlanPrompt, buildResearchPrompt, buildTurnPrompt, validatePlan, validateResearch, validateTurn } from './prompts'
+import { knownWeakKeys, reaskQueue, summarizeWeakSpots, type WeakSpotSummary } from './history'
+import {
+  PLAN_SCHEMA, PRACTICE_SCHEMA, REPORT_SCHEMA, RESEARCH_SCHEMA, TURN_SCHEMA,
+  buildPlanPrompt, buildPracticePrompt, buildReportPrompt, buildResearchPrompt, buildTurnPrompt,
+  cleanQuestionReport, validatePlan, validateReport, validateResearch, validateTurn,
+} from './prompts'
 import type { createInterviewStore } from './store'
 
 const ROUND_ORDER: RoundKind[] = ['hr', 'technical', 'system_design', 'behavioral']
@@ -42,6 +46,38 @@ export class InterviewError extends Error {
     message: string,
   ) {
     super(message)
+  }
+}
+
+const words = (s: string) => new Set(s.toLowerCase().match(/[a-z0-9]+/g) ?? [])
+const overlap = (a: string, b: string) => {
+  const x = words(a)
+  const y = words(b)
+  let same = 0
+  for (const w of x) if (y.has(w)) same++
+  return same / (x.size + y.size - same || 1)
+}
+
+/**
+ * Marks planned questions that come from the re-ask queue: `reask` = the original prompt. The model may reword a
+ * re-ask, so each queued prompt is matched, within its round kind, to the unclaimed question that is the same text or
+ * the most similar one (at least 40% shared words). Done here, not by the model, so the mark never goes missing.
+ */
+function markReasks(rounds: PlannedRound[], queue: { round: RoundKind; prompt: string }[]) {
+  const claimed = new Set<unknown>()
+  for (const item of queue) {
+    let best: { q: PlannedRound['questions'][number]; score: number } | undefined
+    for (const r of rounds.filter((x) => x.kind === item.round)) {
+      for (const q of r.questions) {
+        if (claimed.has(q)) continue
+        const score = q.prompt.trim() === item.prompt.trim() ? 1 : overlap(q.prompt, item.prompt)
+        if (score >= 0.4 && (!best || score > best.score)) best = { q, score }
+      }
+    }
+    if (best) {
+      best.q.reask = item.prompt
+      claimed.add(best.q)
+    }
   }
 }
 
@@ -102,15 +138,17 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
         .filter((x) => x.state === 'done')
         .flatMap((x) => (x.plan ?? []).flatMap((r) => r.questions.map((q) => q.prompt)))
         .slice(-AVOID_LIMIT)
+      const reask = reaskQueue(file.sessions, today(), s.setup.rounds)
       const prompt = buildPlanPrompt({
         setup: s.setup,
         notes: buildVaultContext(vault, catalog, s.setup.topics),
         research: s.research ?? [],
         avoid,
-        reask: reaskQueue(file.sessions, today(), s.setup.rounds),
+        reask,
       })
       const raw = await claude<unknown>(prompt, PLAN_SCHEMA)
       const rounds = validatePlan(raw, s.setup)
+      markReasks(rounds, reask)
       await patch(id, (x) => {
         release()
         x.plan = rounds
@@ -245,15 +283,65 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
     }
   }
 
+  /** The plan cut down to the questions Khue answered (not skipped, not unasked). */
+  function answeredPlan(s: InterviewSession): PlannedRound[] {
+    const answered = new Set(s.turns.filter((t) => t.from === 'candidate' && !t.skipped && t.text.trim()).map((t) => t.q))
+    return (s.plan ?? []).map((r) => ({ ...r, questions: r.questions.filter((q) => answered.has(q.q)) })).filter((r) => r.questions.length > 0)
+  }
+
+  /** Writes the report for the answered questions. Used by finish and retry. */
+  async function report(id: string, release: () => void) {
+    try {
+      const file = await store.read()
+      const s = file.sessions.find((x) => x.id === id)
+      if (!s) return
+      const plan = answeredPlan(s)
+      const prompt = buildReportPrompt({ setup: s.setup, plan, turns: s.turns, knownWeakKeys: knownWeakKeys(file.sessions.filter((x) => x.id !== id)) })
+      const result = validateReport(await claude<unknown>(prompt, REPORT_SCHEMA), plan)
+      await patch(id, (x) => {
+        release()
+        x.report = result
+        x.state = 'done'
+        delete x.error
+      })
+    } catch (e) {
+      await patch(id, (x) => {
+        release()
+        x.error = errorOf(e)
+      })
+    }
+  }
+
+  /** Grades the saved practice answer at `index`. The entry stays; a failure is stored on it. */
+  async function grade(id: string, index: number, release: () => void) {
+    try {
+      const s = (await store.read()).sessions.find((x) => x.id === id)
+      const entry = s?.practice[index]
+      if (!s || !entry) return
+      const question = s.plan?.flatMap((r) => r.questions).find((q) => q.q === entry.q)
+      if (!question) throw new Error('The question is not in this interview.')
+      const prompt = buildPracticePrompt({ question, level: s.setup.level, answer: entry.answer, spoken: Boolean(entry.voice) })
+      const raw = await claude<unknown>(prompt, PRACTICE_SCHEMA)
+      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error('feedback is not an object')
+      const result = cleanQuestionReport({ ...(raw as Record<string, unknown>), q: entry.q })
+      await patch(id, (x) => {
+        release()
+        x.practice[index].result = result
+        delete x.practice[index].error
+      })
+    } catch (e) {
+      await patch(id, (x) => {
+        release()
+        if (x.practice[index]) x.practice[index].error = errorOf(e)
+      })
+    }
+  }
+
   function needRunning(x: InterviewSession | undefined): InterviewSession {
     if (!x) throw new InterviewError('not-found', 'Interview not found.')
     if (running.has(x.id)) throw new InterviewError('busy', 'Still working.')
     if (x.state !== 'running' || !x.current || !x.plan) throw new InterviewError('bad-state', 'This interview is not waiting for an answer.')
     return x
-  }
-
-  const todo = (): never => {
-    throw new InterviewError('bad-state', 'not implemented')
   }
 
   return {
@@ -325,19 +413,57 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
         const x = f.sessions.find((y) => y.id === id)
         if (!x) throw new InterviewError('not-found', 'Interview not found.')
         if (running.has(id)) throw new InterviewError('busy', 'Still working.')
+        const lastPractice = x.state === 'done' ? x.practice.map((p) => Boolean(p.error)).lastIndexOf(true) : -1
+        if (lastPractice >= 0) {
+          background(id, (release) => grade(id, lastPractice, release))
+          delete x.practice[lastPractice].error
+          return structuredClone(x)
+        }
         if (!shown(x).error) throw new InterviewError('bad-state', 'Nothing to retry.')
         if (x.state === 'review' && x.setup.web && (x.research ?? []).length === 0) x.state = 'researching'
         if (x.state === 'researching') background(id, (release) => research(id, release))
         else if (x.state === 'planning') background(id, (release) => plan(id, release))
         else if (x.state === 'thinking') background(id, (release) => turn(id, release))
+        else if (x.state === 'reporting') background(id, (release) => report(id, release))
         else throw new InterviewError('bad-state', 'Nothing to retry.')
         delete x.error
         return structuredClone(x)
       })
     },
-    finish: async () => todo(),
-    practice: async () => todo(),
-    weakSpots: async () => todo(),
+    async finish(id) {
+      return store.update((f) => {
+        const x = f.sessions.find((y) => y.id === id)
+        if (!x) throw new InterviewError('not-found', 'Interview not found.')
+        if (running.has(id)) throw new InterviewError('busy', 'Still working.')
+        if (x.state !== 'running' || !x.plan) throw new InterviewError('bad-state', 'This interview cannot be finished now.')
+        if (answeredPlan(x).length === 0) throw new InterviewError('bad-state', 'Answer at least one question first.')
+        background(id, (release) => report(id, release))
+        x.state = 'reporting'
+        delete x.current
+        delete x.error
+        return structuredClone(x)
+      })
+    },
+    async practice(id, q, text, voice) {
+      if (typeof text !== 'string' || !text.trim()) throw new InterviewError('bad-state', 'Write or record an answer first.')
+      const answer = text.trim()
+      if (answer.length > MAX_ANSWER) throw new InterviewError('bad-state', `The answer is too long (max ${MAX_ANSWER} characters).`)
+      // Save the answer and start the job inside one update, so the answer is never lost and two calls cannot both run.
+      return store.update((f) => {
+        const x = f.sessions.find((y) => y.id === id)
+        if (!x) throw new InterviewError('not-found', 'Interview not found.')
+        if (running.has(id)) throw new InterviewError('busy', 'Still working.')
+        if (x.state !== 'done') throw new InterviewError('bad-state', 'Practice starts after the report.')
+        if (!(x.plan ?? []).some((r) => r.questions.some((pq) => pq.q === q))) throw new InterviewError('bad-state', 'That question is not in this interview.')
+        const index = x.practice.length
+        background(id, (release) => grade(id, index, release))
+        x.practice.push({ q, answer, ...(voice ? { voice } : {}), at: today() })
+        return structuredClone(x)
+      })
+    },
+    async weakSpots() {
+      return summarizeWeakSpots((await store.read()).sessions)
+    },
     async idle() {
       while (jobs.size) await Promise.all([...jobs])
     },

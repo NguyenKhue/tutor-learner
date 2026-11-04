@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, expect, test, vi } from 'vitest'
 import type { CatalogEntry, InterviewSetup } from '../../src/lib/types'
 import { ClaudeError } from '../claude'
-import { PLAN_SCHEMA, RESEARCH_SCHEMA, ROUND_SIZE, TURN_SCHEMA } from './prompts'
+import { PLAN_SCHEMA, PRACTICE_SCHEMA, REPORT_SCHEMA, RESEARCH_SCHEMA, ROUND_SIZE, TURN_SCHEMA } from './prompts'
 import * as history from './history'
 import { InterviewError, createInterviewService } from './service'
 import { createInterviewStore } from './store'
@@ -47,6 +47,10 @@ interface Fake {
   plans: Array<{ prompt: string }>
   researches: Array<{ prompt: string }>
   turns: Array<{ prompt: string }>
+  reports: Array<{ prompt: string }>
+  practices: Array<{ prompt: string }>
+  reportResult: () => unknown
+  practiceResult: () => unknown
   turnResult: () => unknown
   planResult: () => unknown
   researchResult: () => unknown
@@ -59,6 +63,20 @@ function fake(): Fake {
     plans: [],
     researches: [],
     turns: [],
+    reports: [],
+    practices: [],
+    reportResult: () => ({
+      levelMet: true,
+      summary: 'Good.',
+      questions: [
+        { q: '0-0', scores: { reasoning: 2, depth: 3, structure: 3, english: 3, length: 3 }, missed: ['a'], sample: 's', englishNotes: [] },
+        { q: '1-4', scores: { reasoning: 4, depth: 4, structure: 4, english: 4, length: 4 }, missed: [], sample: 's', englishNotes: [] },
+      ],
+      topFixes: [],
+      nextSteps: { notes: [], topics: [], drills: [], gaps: [], focus: 'f' },
+      weakSpots: [{ kind: 'content', key: 'no-numbers', label: 'No numbers' }],
+    }),
+    practiceResult: () => ({ q: '0-0', scores: { reasoning: 3, depth: 3, structure: 3, english: 3, length: 3 }, missed: [], sample: 'better', englishNotes: [] }),
     turnResult: () => ({ say: 'Thanks.', action: 'next' }),
     planResult: () => rawPlan(['hr', 'technical']),
     researchResult: () => ({ items: [{ kind: 'company', text: 'Acme builds apps', url: 'https://acme.com' }, { kind: 'process', text: 'no link', url: '' }] }),
@@ -66,6 +84,14 @@ function fake(): Fake {
       if (schema === TURN_SCHEMA) {
         f.turns.push({ prompt })
         return f.turnResult() as T
+      }
+      if (schema === REPORT_SCHEMA) {
+        f.reports.push({ prompt })
+        return f.reportResult() as T
+      }
+      if (schema === PRACTICE_SCHEMA) {
+        f.practices.push({ prompt })
+        return f.practiceResult() as T
       }
       expect(schema).toBe(PLAN_SCHEMA)
       f.plans.push({ prompt })
@@ -485,4 +511,168 @@ test('retry refuses a healthy session and a running job', async () => {
   const { service, id } = await started(f)
   await expect(service.retry(id)).rejects.toMatchObject({ code: 'bad-state' })
   await expect(service.retry('nope')).rejects.toMatchObject({ code: 'not-found' })
+})
+
+/** A running session where 0-0 was answered, 0-1 skipped, and nothing else asked. */
+async function answeredOne(f: Fake) {
+  const m = await started(f)
+  await m.service.answer(m.id, 'my first answer')
+  await m.service.idle()
+  await m.service.skip(m.id)
+  await m.service.idle()
+  return m
+}
+
+test('finish reports on answered questions and passes known weak keys', async () => {
+  const f = fake()
+  const { service, store, id } = await answeredOne(f)
+  await store.update((file) => {
+    file.sessions.unshift({
+      id: 'old', created: '2026-10-01', setup: setup(), turns: [], state: 'done', practice: [],
+      report: { levelMet: false, summary: '', questions: [], topFixes: [], nextSteps: { notes: [], topics: [], drills: [], gaps: [], focus: '' }, weakSpots: [{ kind: 'english', key: 'old-key', label: 'Old' }] },
+    })
+  })
+  const r = await service.finish(id)
+  expect(r.state).toBe('reporting')
+  await service.idle()
+  const s = await service.get(id)
+  expect(s.state).toBe('done')
+  expect(s.error).toBeUndefined()
+  // only the answered question is kept
+  expect(s.report?.questions.map((q) => q.q)).toEqual(['0-0'])
+  expect(s.report?.weakSpots).toEqual([{ kind: 'content', key: 'no-numbers', label: 'No numbers' }])
+  expect(f.reports[0].prompt).toContain('old-key')
+  expect(f.reports[0].prompt).toContain('### 0-0:')
+  expect(f.reports[0].prompt).not.toContain('### 0-1:')
+})
+
+test('ending early reports what was answered', async () => {
+  const f = fake()
+  const { service, id } = await started(f)
+  await service.answer(id, 'only answer')
+  await service.idle()
+  expect((await service.get(id)).current).toBeDefined()
+  await service.finish(id)
+  await service.idle()
+  const s = await service.get(id)
+  expect(s.state).toBe('done')
+  expect(s.report?.questions.map((q) => q.q)).toEqual(['0-0'])
+  expect(f.reports[0].prompt).not.toContain('### 1-0:')
+})
+
+test('finish is busy while running, refused with no answers, and retry reruns a failed report', async () => {
+  const f = fake()
+  const { service, id } = await started(f)
+  await expect(service.finish(id)).rejects.toMatchObject({ code: 'bad-state' })
+  await service.answer(id, 'a')
+  await service.idle()
+  f.reportResult = () => {
+    throw new ClaudeError('limit', 'Usage limit reached')
+  }
+  let open!: () => void
+  const gate = new Promise<void>((r) => (open = r))
+  const orig = f.claude
+  f.claude = async (p, s) => {
+    await gate
+    return orig(p, s)
+  }
+  await service.finish(id)
+  await expect(service.finish(id)).rejects.toMatchObject({ code: 'busy' })
+  open()
+  await service.idle()
+  const failed = await service.get(id)
+  expect(failed.state).toBe('reporting')
+  expect(failed.error).toEqual({ code: 'limit', message: 'Usage limit reached' })
+  f.claude = orig
+  f.reportResult = fake().reportResult
+  await service.retry(id)
+  await service.idle()
+  const ok = await service.get(id)
+  expect(ok.state).toBe('done')
+  expect(ok.error).toBeUndefined()
+})
+
+async function done(f: Fake) {
+  const m = await started(f)
+  await m.service.answer(m.id, 'a')
+  await m.service.idle()
+  await m.service.finish(m.id)
+  await m.service.idle()
+  return m
+}
+
+test('practice saves the answer first and keeps it when grading fails', async () => {
+  const f = fake()
+  const { service, id } = await done(f)
+  await expect(service.practice(id, '9-9', 'x')).rejects.toMatchObject({ code: 'bad-state' })
+  await expect(service.practice(id, '0-0', '  ')).rejects.toMatchObject({ code: 'bad-state' })
+  f.practiceResult = () => {
+    throw new ClaudeError('failed', 'boom')
+  }
+  let seen: Awaited<ReturnType<typeof service.get>> | undefined
+  const orig = f.claude
+  f.claude = async (p, s) => {
+    if (s === PRACTICE_SCHEMA) seen = await service.get(id)
+    return orig(p, s)
+  }
+  const saved = await service.practice(id, '0-0', ' my retry ', { audio: 'a', seconds: 2 })
+  expect(saved.practice).toHaveLength(1)
+  expect(saved.practice[0]).toMatchObject({ q: '0-0', answer: 'my retry', voice: { audio: 'a', seconds: 2 } })
+  await service.idle()
+  expect(seen?.practice[0].answer).toBe('my retry')
+  const failed = await service.get(id)
+  expect(failed.practice).toHaveLength(1)
+  expect(failed.practice[0].error).toEqual({ code: 'failed', message: 'boom' })
+  expect(failed.practice[0].result).toBeUndefined()
+
+  f.claude = orig
+  f.practiceResult = fake().practiceResult
+  await service.retry(id)
+  await service.idle()
+  const ok = await service.get(id)
+  expect(ok.practice).toHaveLength(1)
+  expect(ok.practice[0].error).toBeUndefined()
+  expect(ok.practice[0].result).toMatchObject({ q: '0-0', sample: 'better' })
+  expect(f.practices).toHaveLength(2)
+})
+
+test('practice needs a done session', async () => {
+  const f = fake()
+  const { service, id } = await started(f)
+  await expect(service.practice(id, '0-0', 'x')).rejects.toMatchObject({ code: 'bad-state' })
+})
+
+test('planning puts due re-asks into the plan and marks them', async () => {
+  const f = fake()
+  const { service, store } = make(f)
+  const first = await service.create(setup())
+  await service.idle()
+  await store.update((file) => {
+    const s = file.sessions[0]
+    s.created = '2026-10-01'
+    s.state = 'done'
+    delete s.current
+    s.report = {
+      levelMet: false, summary: '', topFixes: [], weakSpots: [], nextSteps: { notes: [], topics: [], drills: [], gaps: [], focus: '' },
+      questions: [{ q: '1-2', scores: { reasoning: 1, depth: 3, structure: 3, english: 3, length: 3 }, missed: [], sample: '', englishNotes: [] }],
+    }
+  })
+  expect(first.id).toBe('s1')
+  f.planResult = () => {
+    const p = rawPlan(['hr', 'technical'], 'N')
+    p.rounds[1].questions[0].prompt = 'Q 1-2 reworded'
+    return p
+  }
+  const second = await service.create(setup())
+  await service.idle()
+  expect(f.plans[1].prompt).toContain('[technical] Q 1-2')
+  const s = await service.get(second.id)
+  const marked = s.plan![1].questions.filter((q) => q.reask)
+  expect(marked).toHaveLength(1)
+  expect(marked[0]).toMatchObject({ prompt: 'Q 1-2 reworded', reask: 'Q 1-2' })
+})
+
+test('weakSpots summarizes stored sessions', async () => {
+  const { service } = make(fake())
+  expect(await service.weakSpots()).toEqual([])
 })
