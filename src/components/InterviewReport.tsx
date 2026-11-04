@@ -49,10 +49,11 @@ function averages(questions: QuestionReport[]): Scores | null {
   return out
 }
 
-function Review({ r }: { r: QuestionReport }) {
+/** What a reviewed answer lacked, then the model answer and English notes folded away. `scores` off: the card shows them on the side. */
+function Review({ r, scores = true }: { r: QuestionReport; scores?: boolean }) {
   return (
     <>
-      <ScoreList scores={r.scores} />
+      {scores && <ScoreList scores={r.scores} />}
       {r.missed.length > 0 && (
         <div className="grade-block">
           <div className="label">What was missing</div>
@@ -74,7 +75,6 @@ export function InterviewReport({ session, busy, practice, retry }: Props) {
   if (!report) return null
 
   const expired = Date.now() - new Date(session.created).getTime() > KEEP_DAYS * 86_400_000
-  const promptOf = (q: string) => session.plan?.flatMap((r) => r.questions).find((x) => x.q === q)?.prompt ?? q
   const send = async (q: string, text: string, voice: Voice | null) => {
     if (await practice(q, text, voice)) setOpen(null)
   }
@@ -120,35 +120,44 @@ export function InterviewReport({ session, busy, practice, retry }: Props) {
         </section>
       )}
 
-      {session.plan?.map((round, ri) => {
-        const qs = round.questions.filter((q) => reviews.has(q.q) || session.turns.some((t) => t.q === q.q && t.from === 'candidate'))
-        if (qs.length === 0) return null
-        return (
-          <section key={ri} className="report-round">
-            <h2 className="section-title"><span className="rounds-n">{ri + 1}</span>{ROUND_LABEL[round.kind]}</h2>
-            {qs.map((pq) => {
+      <section className="report-qs" aria-label="Question by question">
+        <h2 className="section-title">Question by question</h2>
+        {session.plan?.flatMap((round) => {
+          const asker = round.persona.split(/[,.]/)[0].trim() || 'The interviewer'
+          return round.questions
+            .filter((q) => reviews.has(q.q) || session.turns.some((t) => t.q === q.q && t.from === 'candidate'))
+            .map((pq) => {
               const target = targetFor(round.kind, pq)
               const answers = session.turns.filter((t) => t.q === pq.q && t.from === 'candidate')
               const review = reviews.get(pq.q)
               const tries = session.practice.filter((p) => p.q === pq.q)
               return (
-                <article key={pq.q} className="card report-q">
-                  <p className="report-asker">{round.persona.split(/[,.]/)[0].trim() || 'The interviewer'} asked</p>
+                <article key={pq.q} className="report-q">
+                  <p className="report-asker"><span className="round-tag">{ROUND_LABEL[round.kind]}</span>{asker} asked</p>
                   <p className="said">{pq.prompt}</p>
-                  {answers.map((a, i) => (
-                    <div key={i} className="grade-block">
-                      <div className="label">Your answer</div>
-                      <p>{a.skipped ? 'Skipped' : a.text}</p>
-                      {a.voice && (expired
-                        ? <p className="hint">Recording removed after {KEEP_DAYS} days</p>
-                        : <div className="voice-play"><audio controls preload="metadata" src={`/api/speech/audio?id=${a.voice.audio}`} /><span className="hint">{lengthOf(a.voice.seconds, target)}</span></div>)}
+                  <div className="report-q-body">
+                    <div className="report-q-main">
+                      {answers.map((a, i) => (
+                        <div key={i} className="grade-block">
+                          <div className="label">{a.skipped ? 'Skipped' : a.voice ? `You said, ${clock(a.voice.seconds)}` : 'You wrote'}</div>
+                          {!a.skipped && <p className="your-words">{a.text}</p>}
+                          {a.voice && (expired
+                            ? <p className="hint">Recording removed after {KEEP_DAYS} days</p>
+                            : <div className="voice-play"><audio controls preload="metadata" src={`/api/speech/audio?id=${a.voice.audio}`} /><span className="hint">{lengthOf(a.voice.seconds, target)}</span></div>)}
+                        </div>
+                      ))}
+                      {review && <Review r={review} scores={false} />}
                     </div>
-                  ))}
-                  {review && <Review r={review} />}
+                    {review && (
+                      <div className="report-q-scores" aria-label="Scores">
+                        <ScoreList scores={review.scores} />
+                      </div>
+                    )}
+                  </div>
                   {tries.map((p, i) => (
                     <div key={i} className="grade-block practice-result">
                       <div className="label">Your new answer</div>
-                      <p>{p.answer}</p>
+                      <p className="your-words">{p.answer}</p>
                       {p.result && <Review r={p.result} />}
                       {!p.result && !p.error && <Working text="Grading your new answer" />}
                       {p.error && (
@@ -164,17 +173,15 @@ export function InterviewReport({ session, busy, practice, retry }: Props) {
                       <button type="button" className="btn ghost" disabled={busy} onClick={() => setOpen(null)}>Cancel</button>
                     </InterviewAnswer>
                   ) : (
-                    <div className="row"><button type="button" className="btn outline" disabled={busy} onClick={() => setOpen(pq.q)}>Practice again</button></div>
+                    <div className="report-q-foot"><button type="button" className="btn outline" disabled={busy} onClick={() => setOpen(pq.q)}>Practice again</button></div>
                   )}
                 </article>
               )
-            })}
-          </section>
-        )
-      })}
+            })
+        })}
+      </section>
 
-
-      <section aria-label="Next steps">
+      <section className="next-card" aria-label="Next steps">
         <h2 className="section-title">What to study next</h2>
         {focus && <p className="next-focus">{focus}</p>}
         <div className="next-grid">
@@ -205,7 +212,7 @@ export function InterviewReport({ session, busy, practice, retry }: Props) {
           )}
         </div>
       </section>
-      <div className="reply-actions"><Link className="btn primary wide" to="/interview/new">New mock interview</Link><Link className="action-link" to="/interview">All interviews</Link></div>
+      <div className="reply-actions"><Link className="btn primary wide" to="/interview/new">Start a new interview</Link><Link className="action-link" to="/interview">All interviews</Link></div>
     </div>
   )
 }

@@ -3,10 +3,24 @@ import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import { Skeleton } from '../components/Loading'
 import { ROUND_LABEL } from '../lib/interview'
-import type { InterviewSession, WeakSpotSummary } from '../lib/types'
+import type { InterviewSession, Scores, WeakSpotSummary } from '../lib/types'
 
 const LEVEL_LABEL = { mid: 'Mid', senior: 'Senior', lead: 'Lead' } as const
 const SHOWN_SPOTS = 3
+
+const BAR_KEYS: (keyof Scores)[] = ['reasoning', 'depth', 'structure', 'english']
+
+/** A small picture of a session: a live dot while it runs, else four bars for its average scores. */
+function Badge({ s }: { s: InterviewSession }) {
+  const qs = s.report?.questions ?? []
+  if (s.state !== 'done' || qs.length === 0) return <span className={s.state !== 'done' ? 'row-badge live' : 'row-badge'} aria-hidden="true"><i /></span>
+  const avg = (k: keyof Scores) => qs.reduce((n, q) => n + q.scores[k], 0) / qs.length
+  return (
+    <span className={`row-badge bars ${s.report?.levelMet ? 'met' : ''}`} aria-hidden="true">
+      {BAR_KEYS.map((k) => <i key={k} style={{ height: `${Math.round(avg(k) * 7)}px` }} />)}
+    </span>
+  )
+}
 
 const day = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })
 
@@ -45,15 +59,19 @@ export function InterviewsPage() {
                 const status = s.state !== 'done' ? 'open' : s.report?.levelMet ? 'met' : 'not-met'
                 return (
                   <li key={s.id} className="interview-row">
-                    <Link className="interview-row-title" to={`/interview/${encodeURIComponent(s.id)}`}>{first || 'No job description'}</Link>
+                    <Badge s={s} />
+                    <span className="interview-row-text">
+                      <Link className="interview-row-title" to={`/interview/${encodeURIComponent(s.id)}`}>{first || 'No job description'}</Link>
+                      <span className="interview-row-meta">
+                        <span>{day(s.created)}</span>
+                        <span>{`${LEVEL_LABEL[s.setup.level]} level`}</span>
+                        <span>{rounds}</span>
+                      </span>
+                    </span>
                     <span className={`status ${status}`}>
                       {status === 'open' ? 'In progress' : status === 'met' ? 'Level met' : 'Level not met yet'}
                     </span>
-                    <span className="interview-row-meta">
-                      <span>{day(s.created)}</span>
-                      <span>{`${LEVEL_LABEL[s.setup.level]} level`}</span>
-                      <span>{rounds}</span>
-                    </span>
+                    <span className="row-go" aria-hidden="true">{status === 'open' ? 'Continue' : 'Debrief'}</span>
                   </li>
                 )
               })}

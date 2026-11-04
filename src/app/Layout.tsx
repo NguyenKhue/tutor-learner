@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { applyTheme, storedTheme } from '../lib/theme'
 
 const NAV = [
@@ -13,9 +13,11 @@ const NAV = [
 /** App shell: top bar with brand, nav and the settings link, the page below. */
 export function Layout() {
   useEffect(() => applyTheme(storedTheme()), [])
+  // The mock interview lays out side by side (stage and answer, setup and summary): it gets a wider page.
+  const room = useLocation().pathname.startsWith('/interview')
 
   return (
-    <div className="wrap">
+    <div className={room ? 'wrap room' : 'wrap'}>
       <header className="top">
         <div className="brand">Tutor</div>
         <nav>
