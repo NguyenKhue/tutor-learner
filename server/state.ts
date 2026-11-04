@@ -27,35 +27,42 @@ function validateState(v: unknown): AppState {
   return { ...empty, ...s, settings: { ...empty.settings, ...s.settings }, reading: { ...empty.reading, ...s.reading } } as AppState
 }
 
+/** A JSON file store: read once, then kept in memory; writes are serialized and atomically renamed into place. */
+export interface JsonStore<T> {
+  read(): Promise<T>
+  /** Runs `fn` on a copy and saves the copy only if `fn` returns without throwing. */
+  update<R>(fn: (s: T) => R | Promise<R>): Promise<R>
+}
+
 /**
- * The on-disk state: read once, then kept in memory; writes are serialized and
+ * The on-disk store: read once, then kept in memory; writes are serialized and
  * atomically renamed into place. A corrupt file is set aside, never overwritten.
  */
-export function createStateStore(file: string): StateStore {
-  let cache: AppState | undefined
+export function createJsonStore<T>(file: string, empty: () => T, validate: (v: unknown) => T): JsonStore<T> {
+  let cache: T | undefined
   let chain: Promise<unknown> = Promise.resolve()
 
-  const load = async (): Promise<AppState> => {
+  const load = async (): Promise<T> => {
     if (cache) return cache
     let raw: string
     try {
       raw = await fs.readFile(file, 'utf8')
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return (cache = emptyState())
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return (cache = empty())
       throw e
     }
     try {
-      cache = validateState(JSON.parse(raw))
+      cache = validate(JSON.parse(raw))
     } catch (e) {
       const aside = `${file}.corrupt-${Date.now()}`
       await fs.rename(file, aside).catch(() => {})
-      console.warn(`[state] ${file} is not a valid state file (${(e as Error).message}); moved it to ${aside}`)
-      cache = emptyState()
+      console.warn(`[state] ${file} is not a valid file (${(e as Error).message}); moved it to ${aside}`)
+      cache = empty()
     }
     return cache
   }
 
-  const write = async (next: AppState): Promise<void> => {
+  const write = async (next: T): Promise<void> => {
     await fs.mkdir(path.dirname(file), { recursive: true })
     const tmp = `${file}.tmp`
     await fs.writeFile(tmp, `${JSON.stringify(next, null, 2)}\n`, 'utf8')
@@ -83,4 +90,9 @@ export function createStateStore(file: string): StateStore {
         return result
       }),
   }
+}
+
+/** The on-disk app state (state.json). */
+export function createStateStore(file: string): StateStore {
+  return createJsonStore<AppState>(file, emptyState, validateState)
 }

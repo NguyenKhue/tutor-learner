@@ -63,3 +63,22 @@ test('never removes the newest 7 copies, even when the clock is far ahead', () =
   expect(removed).toEqual(['state-2026-01-01.json', 'state-2026-01-02.json'])
   expect(names()).toHaveLength(7)
 })
+
+test('backs up interviews.json with its own prefix and prunes only that prefix', () => {
+  const interviews = path.join(dir, 'interviews.json')
+  fs.writeFileSync(interviews, '{"v":1}')
+  fs.mkdirSync(backupsDir)
+  for (let d = 1; d <= 9; d++) {
+    fs.writeFileSync(path.join(backupsDir, `state-2026-01-0${d}.json`), '{}')
+    fs.writeFileSync(path.join(backupsDir, `interviews-2026-01-0${d}.json`), '{}')
+  }
+  expect(runBackups(interviews, backupsDir, at(2030, 1, 1), 'interviews')).toEqual({
+    created: 'interviews-2030-01-01.json',
+    removed: ['interviews-2026-01-01.json', 'interviews-2026-01-02.json', 'interviews-2026-01-03.json'],
+  })
+  expect(names().filter((n) => n.startsWith('state-'))).toHaveLength(9)
+  // and pruning state leaves the interviews copies alone
+  fs.writeFileSync(stateFile, '{}')
+  runBackups(stateFile, backupsDir, at(2030, 1, 1))
+  expect(names().filter((n) => n.startsWith('interviews-'))).toHaveLength(7)
+})

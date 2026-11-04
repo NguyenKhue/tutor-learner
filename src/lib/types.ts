@@ -43,3 +43,27 @@ export type ReadingStatus = 'unread' | 'understood' | 'reread' | 'done'
 export interface ReadingState { catalog: Record<string, CatalogEntry>; quizzes: Record<string, ReadingQuiz>; progress: Record<string, ReadingProgress> }
 export interface ReadingItem extends CatalogEntry { status: ReadingStatus; skipped: boolean; nextCheck: string | null; rung: number; openCheck: ReadingCheck | null }
 export interface ReadingOverview { items: ReadingItem[]; upNext: string[]; due: string[]; classify: { total: number; done: number; running: boolean; error: string | null } }
+
+// Mock interview
+export type Level = 'mid' | 'senior' | 'lead'
+export type RoundKind = 'hr' | 'technical' | 'system_design' | 'behavioral'
+export interface InterviewSetup { source: string; level: Level; rounds: RoundKind[]; topics: string[]; web: boolean; readAloud: boolean }
+export interface ResearchItem { kind: 'company' | 'process' | 'knowledge'; text: string; url: string; kept: boolean }
+export interface PlannedQuestion { q: string; prompt: string; type: 'scenario' | 'tradeoff' | 'design' | 'behavioral' | 'hr'
+  source: { vault?: string; url?: string }; rubric: Record<Level, string[]>; probes: string[]; reask?: string }
+export interface PlannedRound { kind: RoundKind; persona: string; intro: string; competencies: string[]; questions: PlannedQuestion[] }
+export interface Turn { round: number; q: string; from: 'interviewer' | 'candidate'; text: string; voice?: Voice; skipped?: boolean; at: string }
+export interface Scores { reasoning: number; depth: number; structure: number; english: number; length: number }
+export interface QuestionReport { q: string; scores: Scores; missed: string[]; sample: string; englishNotes: string[] }
+export interface WeakSpot { kind: 'content' | 'level' | 'english' | 'delivery'; key: string; label: string }
+export interface InterviewReport { levelMet: boolean; summary: string; questions: QuestionReport[]
+  topFixes: { title: string; example: string; action: string }[]
+  nextSteps: { notes: string[]; topics: string[]; drills: string[]; gaps: { topic: string; url: string }[]; focus: string }
+  weakSpots: WeakSpot[] }
+export interface Practice { q: string; answer: string; voice?: Voice; at: string; result?: QuestionReport; error?: { code: 'limit' | 'auth' | 'failed'; message: string } }
+export type InterviewState = 'researching' | 'review' | 'planning' | 'running' | 'thinking' | 'reporting' | 'done'
+export interface InterviewSession { id: string; created: string; setup: InterviewSetup; research?: ResearchItem[]
+  plan?: PlannedRound[]; turns: Turn[]; state: InterviewState; current?: { round: number; q: string; followups: number }
+  report?: InterviewReport; practice: Practice[]; error?: { code: 'limit' | 'auth' | 'failed'; message: string } }
+export interface InterviewsFile { version: 1; sessions: InterviewSession[] }
+export interface NoteExcerpt { path: string; title: string; text: string }

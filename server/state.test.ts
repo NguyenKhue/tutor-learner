@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { createStateStore, emptyState } from './state'
+import { createJsonStore, createStateStore, emptyState } from './state'
 
 let dir: string
 let file: string
@@ -66,4 +66,20 @@ test('an older state file gets reading defaults', async () => {
   const s = await createStateStore(file).read()
   expect(s.settings).toEqual({ newPerDay: 4, englishFeedback: false, readingReviewsPerDay: 3 })
   expect(s.reading).toEqual({ catalog: {}, quizzes: {}, progress: {} })
+})
+
+test('createJsonStore keeps a corrupt file aside and starts empty', async () => {
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const custom = path.join(dir, 'custom.json')
+  fs.writeFileSync(custom, '{"version":2}')
+  const store = createJsonStore(custom, () => ({ n: 0 }), (v) => {
+    if ((v as { n?: number })?.n === undefined) throw new Error('bad')
+    return v as { n: number }
+  })
+  expect(await store.read()).toEqual({ n: 0 })
+  expect(fs.readdirSync(dir).some((n) => n.startsWith('custom.json.corrupt-'))).toBe(true)
+  await store.update((s) => {
+    s.n = 2
+  })
+  expect(JSON.parse(fs.readFileSync(custom, 'utf8'))).toEqual({ n: 2 })
 })
