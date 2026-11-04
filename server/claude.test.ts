@@ -90,3 +90,17 @@ test('missing binary is failed, not a crash', async () => {
   expect(err).toBeInstanceOf(ClaudeError)
   expect(err.code).toBe('failed')
 })
+
+test('passes WebSearch as the only tool when asked', async () => {
+  await call({ tools: ['WebSearch'] })
+  const { argv } = runs()[0]
+  expect(argv.slice(argv.indexOf('--tools'), argv.indexOf('--tools') + 2)).toEqual(['--tools', 'WebSearch'])
+  expect(argv.slice(argv.indexOf('--allowedTools'), argv.indexOf('--allowedTools') + 2)).toEqual(['--allowedTools', 'WebSearch'])
+})
+
+test('keeps --tools empty by default', async () => {
+  await call()
+  const { argv } = runs()[0]
+  expect(argv[argv.indexOf('--tools') + 1]).toBe('')
+  expect(argv).not.toContain('--allowedTools')
+})

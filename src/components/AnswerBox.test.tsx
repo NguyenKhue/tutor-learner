@@ -137,3 +137,11 @@ test('without a microphone API there is no mic button', () => {
   expect(screen.queryByRole('button', { name: 'Speak' })).toBeNull()
   expect(box()).toHaveAttribute('placeholder', 'Type your answer…')
 })
+
+test('starting a recording stops any speech', async () => {
+  const synth = { cancel: vi.fn(), speak: vi.fn(), getVoices: () => [] }
+  vi.stubGlobal('speechSynthesis', synth)
+  render(<Host />)
+  await userEvent.click(screen.getByRole('button', { name: /^Speak/ }))
+  expect(synth.cancel).toHaveBeenCalled()
+})

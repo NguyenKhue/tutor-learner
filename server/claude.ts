@@ -25,6 +25,8 @@ interface RunClaudeOptions {
   delaysMs?: number[]
   sleep?: (ms: number) => Promise<void>
   model?: string
+  /** built-in tools to allow; none by default */
+  tools?: string[]
 }
 
 /** Runs the Claude Code CLI headless with a JSON schema, retrying transient failures and returning structured_output. */
@@ -38,12 +40,15 @@ export async function runClaude<T>(opts: RunClaudeOptions): Promise<T> {
     delaysMs = [2000, 6000, 18000],
     sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
     model = 'sonnet',
+    tools = [],
   } = opts
 
   const executable = bin.startsWith('~/') ? path.join(os.homedir(), bin.slice(2)) : bin
+  const toolList = tools.join(',')
   const args = [
-    '-p', '--model', model, '--tools', '', '--setting-sources', '', '--no-session-persistence',
+    '-p', '--model', model, '--tools', toolList, '--setting-sources', '', '--no-session-persistence',
     '--output-format', 'json', '--json-schema', JSON.stringify(schema),
+    ...(toolList ? ['--allowedTools', toolList] : []),
   ]
 
   let last: ClaudeError | undefined

@@ -102,12 +102,20 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
 
   const stateFile = path.join(dataDir, 'state.json')
   const now = o.now ?? Date.now
+  const interviewsFile = path.join(dataDir, 'interviews.json')
   const backup = () => {
+    // Each file has its own try/catch: a failed state.json backup must not skip interviews.json, and the other way round.
     try {
       const r = runBackups(stateFile, path.join(dataDir, 'backups'), now())
       if (r.created) console.log(`Backed up state.json as backups/${r.created}`)
     } catch (e) {
-      console.error('Backup failed:', e)
+      console.error('Backup of state.json failed:', e)
+    }
+    try {
+      const i = runBackups(interviewsFile, path.join(dataDir, 'backups'), now(), 'interviews')
+      if (i.created) console.log(`Backed up interviews.json as backups/${i.created}`)
+    } catch (e) {
+      console.error('Backup of interviews.json failed:', e)
     }
   }
   backup()

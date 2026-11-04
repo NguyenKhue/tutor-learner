@@ -7,6 +7,7 @@ const NAV = [
   ['/reading', 'Reading'],
   ['/topics', 'Topics'],
   ['/progress', 'Progress'],
+  ['/interview', 'Interview'],
 ] as const
 
 /** App shell: top bar with brand, nav and the settings link, the page below. */

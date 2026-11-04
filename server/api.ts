@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
-import type { Attempt, Overview, Question, Settings, TodayList, Voice } from '../src/lib/types'
+import type { Attempt, InterviewSetup, Overview, Question, Settings, TodayList, Voice } from '../src/lib/types'
 import { deriveReading, interviewCap } from '../src/lib/readingSchedule'
 import { localToday } from '../src/lib/day'
 import { addExtra, buildToday, ensureToday } from '../src/lib/today'
@@ -14,6 +14,8 @@ import { TutorCliError, createTutorCli, type TutorCli } from './tutor'
 import { BadPath } from './vault'
 import { resolveVaultImage } from './reading/images'
 import { createReadingService, type ReadingService } from './reading/service'
+import { InterviewError, createInterviewService, type InterviewService } from './interview/service'
+import { createInterviewStore } from './interview/store'
 import { SpeechError, createSpeech, isAudioId, type SpeechService } from './speech'
 
 const MAX_AUDIO_BYTES = 30_000_000
@@ -27,6 +29,10 @@ export interface ApiPaths {
 /** The injectable edges of the API, all optional outside tests. */
 export interface ApiDeps {
   claude?: <T>(prompt: string, schema: object) => Promise<T>
+  /** The Claude call that may search the web; used only by the interview research step. */
+  claudeWeb?: <T>(prompt: string, schema: object) => Promise<T>
+  /** The Claude call with a long timeout and one retry; used only for the interview plan and report. */
+  claudeLong?: <T>(prompt: string, schema: object) => Promise<T>
   today?: () => string
   prefetch?: boolean
   python?: string
@@ -51,6 +57,7 @@ interface ApiContext {
   study: StudyService
   reading: ReadingService
   speech: SpeechService
+  interview: InterviewService
   today: () => string
 }
 
@@ -108,6 +115,19 @@ export function createApiMiddleware(
       claude = <T>(prompt: string, schema: object) =>
         runClaude<T>({ prompt, schema, bin: config.claudeBin, cwd: paths.dataDir })
     }
+    let claudeLong = deps.claudeLong
+    if (!claudeLong) {
+      fs.mkdirSync(paths.dataDir, { recursive: true })
+      // An injected `claude` (tests) stands in for the long call too.
+      claudeLong = deps.claude ?? (<T>(prompt: string, schema: object) =>
+        runClaude<T>({ prompt, schema, bin: config.claudeBin, cwd: paths.dataDir, timeoutMs: 240_000, delaysMs: [5000] }))
+    }
+    let claudeWeb = deps.claudeWeb
+    if (!claudeWeb) {
+      fs.mkdirSync(paths.dataDir, { recursive: true })
+      claudeWeb = <T>(prompt: string, schema: object) =>
+        runClaude<T>({ prompt, schema, bin: config.claudeBin, cwd: paths.dataDir, tools: ['WebSearch'], timeoutMs: 180_000 })
+    }
     const study = createStudyService({
       vault: config.vault,
       vaultName: path.basename(config.vault),
@@ -124,7 +144,16 @@ export function createApiMiddleware(
       model: config.whisperModel,
     })
     speech.prune()
-    return { config, tutor, store, study, reading, speech, today }
+    const interview = createInterviewService({
+      vault: config.vault,
+      store: createInterviewStore(path.join(paths.dataDir, 'interviews.json')),
+      readCatalog: async () => (await store.read()).reading.catalog,
+      claude,
+      claudeLong,
+      claudeWeb,
+      today,
+    })
+    return { config, tutor, store, study, reading, speech, interview, today }
   }
 
   /** Handles one API request, mapping every failure onto a JSON response. */
@@ -223,6 +252,26 @@ export function createApiMiddleware(
         await ctx.reading.skip(field(body, 'path'), skipped)
         return send(res, 200, { ok: true })
       }
+      case 'GET /api/interviews':
+        return send(res, 200, await ctx.interview.list())
+      case 'POST /api/interview':
+        return send(res, 200, await ctx.interview.create(setupOf(body)))
+      case 'GET /api/interview':
+        return send(res, 200, await ctx.interview.get(query(url, 'id')))
+      case 'POST /api/interview/research':
+        return send(res, 200, await ctx.interview.keepResearch(field(body, 'id'), keptOf(record(body).kept)))
+      case 'POST /api/interview/answer':
+        return send(res, 200, await ctx.interview.answer(field(body, 'id'), field(body, 'text'), voiceOf(record(body).voice)))
+      case 'POST /api/interview/skip':
+        return send(res, 200, await ctx.interview.skip(field(body, 'id')))
+      case 'POST /api/interview/retry':
+        return send(res, 200, await ctx.interview.retry(field(body, 'id')))
+      case 'POST /api/interview/finish':
+        return send(res, 200, await ctx.interview.finish(field(body, 'id')))
+      case 'POST /api/interview/practice':
+        return send(res, 200, await ctx.interview.practice(field(body, 'id'), field(body, 'q'), field(body, 'text'), voiceOf(record(body).voice)))
+      case 'GET /api/interview/weak-spots':
+        return send(res, 200, await ctx.interview.weakSpots())
       case 'GET /api/vault-image':
         return sendImage(res, resolveVaultImage(ctx.config.vault, query(url, 'note'), query(url, 'src')))
       default:
@@ -479,6 +528,29 @@ function voiceOf(value: unknown): Voice | undefined {
   return { audio: v.audio, seconds: v.seconds }
 }
 
+const ROUND_KINDS = ['hr', 'technical', 'system_design', 'behavioral']
+const LEVEL_NAMES = ['mid', 'senior', 'lead']
+const MAX_SOURCE = 20_000
+
+/** Validates the interview setup body at the edge, so a bad one is a 400 and never reaches the service. */
+function setupOf(body: unknown): InterviewSetup {
+  const b = record(body)
+  if (typeof b.source !== 'string') throw new HttpError(400, 'source must be text')
+  if (b.source.length > MAX_SOURCE) throw new HttpError(400, `source is over ${MAX_SOURCE} characters`)
+  if (typeof b.level !== 'string' || !LEVEL_NAMES.includes(b.level)) throw new HttpError(400, 'unknown level')
+  if (!Array.isArray(b.rounds) || b.rounds.length === 0) throw new HttpError(400, 'choose at least one round')
+  if (b.rounds.some((r) => typeof r !== 'string' || !ROUND_KINDS.includes(r))) throw new HttpError(400, 'unknown round')
+  if (!Array.isArray(b.topics) || b.topics.some((t) => typeof t !== 'string')) throw new HttpError(400, 'topics must be a list of text')
+  if (typeof b.web !== 'boolean' || typeof b.readAloud !== 'boolean') throw new HttpError(400, 'web and readAloud must be true or false')
+  return b as unknown as InterviewSetup
+}
+
+/** Validates the kept research indexes. */
+function keptOf(value: unknown): number[] {
+  if (!Array.isArray(value) || value.some((k) => !Number.isInteger(k))) throw new HttpError(400, 'kept must be a list of numbers')
+  return value as number[]
+}
+
 /** The topic words passed to Whisper, bounded because they cost model context. */
 function hintOf(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim().slice(0, 200) : undefined
@@ -570,6 +642,10 @@ function fail(res: ServerResponse, err: unknown): void {
   if (err instanceof HttpError) return send(res, err.status, { error: err.message })
   if (err instanceof StudyError) {
     const status = err.code === 'bad-state' ? 409 : err.code === 'not-found' ? 404 : 422
+    return send(res, status, { error: err.message, code: err.code })
+  }
+  if (err instanceof InterviewError) {
+    const status = err.code === 'not-found' ? 404 : 409
     return send(res, status, { error: err.message, code: err.code })
   }
   if (err instanceof ClaudeError) return send(res, 503, { error: err.message, code: err.code })

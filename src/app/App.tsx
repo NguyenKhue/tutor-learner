@@ -10,6 +10,10 @@ import { ProgressPage } from '../pages/ProgressPage'
 import { SettingsPage } from '../pages/SettingsPage'
 import { ReadingPage } from '../pages/ReadingPage'
 import { ReadPage } from '../pages/ReadPage'
+import { InterviewsPage } from '../pages/InterviewsPage'
+import { InterviewSetupPage } from '../pages/InterviewSetupPage'
+import { InterviewPage } from '../pages/InterviewPage'
+import { WeakSpotsPage } from '../pages/WeakSpotsPage'
 
 /** Router + data shell: the Layout is the parent route and Today is the index page. */
 export function App() {
@@ -26,6 +30,10 @@ export function App() {
             <Route path="point/:pointId" element={<PointPage />} />
             <Route path="study/:pointId" element={<StudyPage />} />
             <Route path="progress" element={<ProgressPage />} />
+            <Route path="interview" element={<InterviewsPage />} />
+            <Route path="interview/new" element={<InterviewSetupPage />} />
+            <Route path="interview/weak-spots" element={<WeakSpotsPage />} />
+            <Route path="interview/:id" element={<InterviewPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Routes>

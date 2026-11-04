@@ -105,4 +105,14 @@ cp ~/Library/Application\ Support/tutor-learner/backups/state-2026-10-20.json ~/
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/vn.khue.tutor-learner.plist
 ```
 
+Mock interviews are kept in `interviews.json` in the same folder, and the server copies it to `backups/interviews-YYYY-MM-DD.json`
+by the same rules. To restore one, stop the server as above and copy the backup over `interviews.json`:
+
+```bash
+cp ~/Library/Application\ Support/tutor-learner/backups/interviews-2026-11-04.json ~/Library/Application\ Support/tutor-learner/interviews.json
+```
+
+Then start the server again. Web search is opt-in: only the research step of a mock interview can use it, and only when you
+tick "Search the web" in the setup. Every other Claude call runs without tools.
+
 A `state.json` that cannot be read is moved aside as `state.json.corrupt-<time>` instead of being overwritten.
