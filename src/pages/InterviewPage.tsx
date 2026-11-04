@@ -105,7 +105,7 @@ export function InterviewPage() {
         <ul className="research-list">
           {items.map((it, i) => (
             <li key={i}>
-              <label className="check">
+              <label className="check-row">
                 <input type="checkbox" checked={!dropped.includes(i)} onChange={() => setDropped(dropped.includes(i) ? dropped.filter((x) => x !== i) : [...dropped, i])} />
                 <span>{it.text}</span>
               </label>

@@ -81,7 +81,7 @@ export function InterviewSetupPage() {
         <fieldset className="field">
           <legend className="field-label">Rounds</legend>
           {ROUNDS.map((r) => (
-            <label key={r} className="check">
+            <label key={r} className="check-row">
               <input type="checkbox" checked={rounds.includes(r)} onChange={() => setRounds(toggle(rounds, r))} />
               {ROUND_LABEL[r]}
             </label>
@@ -98,8 +98,8 @@ export function InterviewSetupPage() {
         </fieldset>
 
         <div className="field">
-          <label className="check"><input type="checkbox" checked={web} onChange={() => setWeb(!web)} />Search the web</label>
-          <label className="check"><input type="checkbox" checked={readAloud} onChange={() => setReadAloud(!readAloud)} />Read questions aloud</label>
+          <label className="check-row"><input type="checkbox" checked={web} onChange={() => setWeb(!web)} />Search the web</label>
+          <label className="check-row"><input type="checkbox" checked={readAloud} onChange={() => setReadAloud(!readAloud)} />Read questions aloud</label>
         </div>
 
         {error && <p className="hint" role="alert">{error}</p>}

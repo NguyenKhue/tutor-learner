@@ -72,7 +72,7 @@ export function InterviewRun({ session, busy, hideText, onHideText, act, onLeave
           {canSpeak && (
             <div className="row">
               <button type="button" className="btn" onClick={() => speak(last.text)}>Play again</button>
-              <label className="check">
+              <label className="check-row">
                 <input type="checkbox" checked={hideText} onChange={() => onHideText(!hideText)} />
                 Hide text until I answer
               </label>
