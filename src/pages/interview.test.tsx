@@ -6,7 +6,10 @@ import { goTo, mockApi } from '../test/api'
 import { makeOverview, makePoint } from '../test/fixtures'
 import type { InterviewSession } from '../lib/types'
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  try { localStorage.clear() } catch { /* no storage */ }
+})
 
 const overview = () => makeOverview({
   topicOrder: ['Kotlin Language', 'Coroutines and Flow'],
@@ -86,7 +89,7 @@ test('nav has Interview', async () => {
 
 // ---- session, report, weak spots ----
 const synth = () => {
-  const s = { cancel: vi.fn(), speak: vi.fn(), getVoices: () => [] }
+  const s = { cancel: vi.fn(), speak: vi.fn(), getVoices: () => [] as unknown[] }
   vi.stubGlobal('speechSynthesis', s)
   vi.stubGlobal('SpeechSynthesisUtterance', class { text: string; constructor(t: string) { this.text = t } })
   return s
@@ -99,7 +102,7 @@ const plan = [
   ] },
 ]
 const turn = (from: 'interviewer' | 'candidate', q: string, text: string, over = {}) => ({ round: 0, q, from, text, at: '2026-11-04', ...over })
-const scores = { reasoning: 4, depth: 3, structure: 4, english: 5, length: 3 }
+const scores = { reasoning: 4, depth: 3, structure: 4, english: 4, length: 3 }
 const report = {
   levelMet: false, summary: 'Close, but shallow.',
   questions: [{ q: '0-0', scores, missed: ['Dispatchers'], sample: 'A coroutine is…', englishNotes: ['Use "a" before coroutine'] }],
@@ -172,7 +175,7 @@ test('a failed step offers Try again', async () => {
 test('the report shows scores, fixes and practice again', async () => {
   const user = userEvent.setup()
   const done = doneSession()
-  const practiced = { ...done, practice: [{ q: '0-0', answer: 'Better', at: '2026-11-04', result: { ...report.questions[0], scores: { ...scores, depth: 5 } } }] }
+  const practiced = { ...done, practice: [{ q: '0-0', answer: 'Better', at: '2026-11-04', result: { ...report.questions[0], scores: { ...scores, depth: 4 } } }] }
   const calls = mockApi({ 'GET /api/overview': overview(), 'GET /api/interview': done, 'POST /api/interview/practice': practiced })
   goTo('/interview/s1')
   render(<App />)
@@ -348,4 +351,160 @@ test('with every question skipped, Leave interview replaces Finish', async () =>
   render(<App />)
   expect(await screen.findByRole('button', { name: 'Leave interview' })).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Finish' })).toBeNull()
+})
+
+// ---- final review fixes ----
+const KEY = 'tutor.interview.hideText'
+
+test('review with a failed search still lets you start, and offers Search again', async () => {
+  const user = userEvent.setup()
+  const review = session('s1', '2026-11-04T10:00:00Z', 'x', {
+    state: 'review', research: [], setup: { source: 'x', level: 'senior', rounds: ['hr'], topics: [], web: true, readAloud: true },
+    error: { code: 'failed', message: 'No research found. You can start the interview without it.' },
+  })
+  const calls = mockApi({
+    'GET /api/overview': overview(), 'GET /api/interview': review,
+    'POST /api/interview/research': { ...review, state: 'planning', error: undefined },
+  })
+  goTo('/interview/s1')
+  render(<App />)
+  expect(await screen.findByText(/No research found/)).toBeInTheDocument()
+  expect(screen.queryByText('Something went wrong')).toBeNull()
+  await user.click(screen.getByRole('button', { name: 'Start interview' }))
+  expect(calls.find((c) => c.path === '/api/interview/research')?.body).toEqual({ id: 's1', kept: [] })
+})
+
+test('review with a failed search: Search again retries the research', async () => {
+  const user = userEvent.setup()
+  const review = session('s1', '2026-11-04T10:00:00Z', 'x', {
+    state: 'review', research: [], setup: { source: 'x', level: 'senior', rounds: ['hr'], topics: [], web: true, readAloud: true },
+    error: { code: 'limit', message: 'Usage limit reached' },
+  })
+  const calls = mockApi({ 'GET /api/overview': overview(), 'GET /api/interview': review, 'POST /api/interview/retry': { ...review, state: 'researching', error: undefined } })
+  goTo('/interview/s1')
+  render(<App />)
+  expect(await screen.findByText('Usage limit reached')).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Search again' }))
+  expect(calls.find((c) => c.path === '/api/interview/retry')?.body).toEqual({ id: 's1' })
+  expect(await screen.findByText('Searching the web')).toBeInTheDocument()
+})
+
+test('scores are out of 4', async () => {
+  mockApi({ 'GET /api/overview': overview(), 'GET /api/interview': doneSession() })
+  goTo('/interview/s1')
+  const { container } = render(<App />)
+  await screen.findByText('Close, but shallow.')
+  expect(container.textContent).not.toContain('/5')
+  expect(screen.getAllByText('4/4').length).toBeGreaterThan(0)
+})
+
+test('Hide text stays on across questions and is remembered', async () => {
+  const user = userEvent.setup()
+  synth()
+  const first = session('s1', '2026-11-04T10:00:00Z', 'x', { plan, current: { round: 0, q: '0-0', followups: 0 }, turns: [turn('interviewer', '0-0', 'What is a coroutine?')] })
+  const second = { ...first, current: { round: 0, q: '0-1', followups: 0 }, turns: [...first.turns, turn('candidate', '0-0', 'a'), turn('interviewer', '0-1', 'Explain Flow.')] }
+  let gets = 0
+  mockApi({
+    'GET /api/overview': overview(),
+    'GET /api/interview': () => (gets++ < 1 ? first : second),
+    'POST /api/interview/answer': second,
+  })
+  goTo('/interview/s1')
+  render(<App />)
+  await user.click(await screen.findByRole('checkbox', { name: 'Hide text until I answer' }))
+  expect(screen.queryByText('What is a coroutine?')).toBeNull()
+  await user.type(screen.getByLabelText('Your answer'), 'a')
+  await user.click(screen.getByRole('button', { name: 'Send answer' }))
+  expect(await screen.findByText('Technical · question 2 of 2')).toBeInTheDocument()
+  expect(screen.getByRole('checkbox', { name: 'Hide text until I answer' })).toBeChecked()
+  expect(screen.queryByText('Explain Flow.')).toBeNull()
+  expect(localStorage.getItem(KEY)).toBe('1')
+})
+
+test('Hide text starts from the remembered setting', async () => {
+  synth()
+  localStorage.setItem(KEY, '1')
+  const first = session('s1', '2026-11-04T10:00:00Z', 'x', { plan, current: { round: 0, q: '0-0', followups: 0 }, turns: [turn('interviewer', '0-0', 'What is a coroutine?')] })
+  mockApi({ 'GET /api/overview': overview(), 'GET /api/interview': first })
+  goTo('/interview/s1')
+  render(<App />)
+  expect(await screen.findByRole('checkbox', { name: 'Hide text until I answer' })).toBeChecked()
+  expect(screen.queryByText('What is a coroutine?')).toBeNull()
+})
+
+test('without speech synthesis there is no Play again and no Hide text', async () => {
+  vi.stubGlobal('speechSynthesis', undefined)
+  const first = session('s1', '2026-11-04T10:00:00Z', 'x', { plan, current: { round: 0, q: '0-0', followups: 0 }, turns: [turn('interviewer', '0-0', 'What is a coroutine?')] })
+  mockApi({ 'GET /api/overview': overview(), 'GET /api/interview': first })
+  goTo('/interview/s1')
+  render(<App />)
+  expect(await screen.findByText('What is a coroutine?')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Play again' })).toBeNull()
+  expect(screen.queryByRole('checkbox', { name: 'Hide text until I answer' })).toBeNull()
+})
+
+test('an ended interview with no closing line shows a short closing line, not the old question', async () => {
+  synth()
+  const ended = session('s1', '2026-11-04T10:00:00Z', 'x', {
+    plan, turns: [turn('interviewer', '0-1', 'Explain Flow.'), turn('candidate', '0-1', '', { skipped: true }), turn('candidate', '0-0', 'a')],
+  })
+  mockApi({ 'GET /api/overview': overview(), 'GET /api/interview': ended })
+  goTo('/interview/s1')
+  render(<App />)
+  expect(await screen.findByText("That's the end of the interview.")).toBeInTheDocument()
+  expect(screen.queryByText('Explain Flow.')).toBeNull()
+  expect(screen.getByRole('button', { name: 'Finish' })).toBeInTheDocument()
+})
+
+test('an ended interview with a closing line shows that line', async () => {
+  synth()
+  const ended = session('s1', '2026-11-04T10:00:00Z', 'x', {
+    plan, turns: [turn('candidate', '0-1', 'a'), turn('interviewer', '0-1', 'Thank you, goodbye.')],
+  })
+  mockApi({ 'GET /api/overview': overview(), 'GET /api/interview': ended })
+  goTo('/interview/s1')
+  render(<App />)
+  expect(await screen.findByText('Thank you, goodbye.')).toBeInTheDocument()
+  expect(screen.queryByText("That's the end of the interview.")).toBeNull()
+})
+
+test('the list marks sessions that are not done as In progress', async () => {
+  mockApi({
+    'GET /api/overview': overview(),
+    'GET /api/interviews': [
+      session('b', '2026-11-03', 'Running one'),
+      session('a', '2026-11-01', 'Done one', { state: 'done' }),
+    ],
+  })
+  goTo('/interview')
+  render(<App />)
+  await screen.findByText('Running one')
+  const rows = screen.getAllByRole('listitem')
+  expect(within(rows[0]).getByText('In progress')).toBeInTheDocument()
+  expect(within(rows[1]).queryByText('In progress')).toBeNull()
+})
+
+test('setup: a topic picked by hand survives a later blur', async () => {
+  const user = userEvent.setup()
+  mockApi({ 'GET /api/overview': overview(), 'GET /api/interviews': [] })
+  goTo('/interview/new')
+  render(<App />)
+  const box = await screen.findByLabelText('Job description or notes')
+  await user.type(box, 'Kotlin dev')
+  await user.tab()
+  expect(screen.getByRole('button', { name: 'Kotlin Language' })).toHaveAttribute('aria-pressed', 'true')
+  await user.click(screen.getByRole('button', { name: 'Kotlin Language' })) // turn it off by hand
+  await user.type(box, ' and more')
+  await user.tab()
+  expect(screen.getByRole('button', { name: 'Kotlin Language' })).toHaveAttribute('aria-pressed', 'false')
+})
+
+test('setup: "programming language" does not pick Kotlin Language', async () => {
+  const user = userEvent.setup()
+  mockApi({ 'GET /api/overview': overview(), 'GET /api/interviews': [] })
+  goTo('/interview/new')
+  render(<App />)
+  await user.type(await screen.findByLabelText('Job description or notes'), 'any programming language')
+  await user.tab()
+  expect(screen.getByRole('button', { name: 'Kotlin Language' })).toHaveAttribute('aria-pressed', 'false')
 })

@@ -1,29 +1,35 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnswerBox } from './AnswerBox'
 import { ROUND_LABEL } from '../lib/interview'
-import { speak, stopSpeaking } from '../lib/speak'
+import { speak, speechAvailable, stopSpeaking } from '../lib/speak'
 import type { InterviewSession, Voice } from '../lib/types'
 
 interface Props {
   session: InterviewSession
   busy: boolean
+  /** "Hide text until I answer" lives on the page so it stays on from question to question */
+  hideText: boolean
+  onHideText(hide: boolean): void
   /** posts to an action route; resolves when the session has been replaced */
   act(action: 'answer' | 'skip' | 'finish', extra?: Record<string, unknown>): Promise<void>
   onLeave(): void
 }
 
 /** The live interview: the interviewer's last turn, the answer box, and the three ways forward. */
-export function InterviewRun({ session, busy, act, onLeave }: Props) {
+export function InterviewRun({ session, busy, hideText, onHideText, act, onLeave }: Props) {
   const [text, setText] = useState('')
   const [voice, setVoice] = useState<Voice | null>(null)
   const [speechBusy, setSpeechBusy] = useState(false)
-  const [hidden, setHidden] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const spoken = useRef(-1)
 
   const lastIndex = session.turns.map((t) => t.from).lastIndexOf('interviewer')
   const last = lastIndex >= 0 ? session.turns[lastIndex] : null
   const answered = session.turns.some((t) => t.from === 'candidate' && !t.skipped)
+  const canSpeak = speechAvailable()
+  const hidden = hideText && canSpeak && !!session.current
+  // The interview is over but the last turn is not the interviewer's: the old question must not stay next to Finish.
+  const closing = !session.current && session.turns.at(-1)?.from !== 'interviewer'
 
   // A new interviewer turn is read aloud once; Play again repeats it.
   useEffect(() => {
@@ -31,7 +37,6 @@ export function InterviewRun({ session, busy, act, onLeave }: Props) {
     spoken.current = lastIndex
     setText('')
     setVoice(null)
-    setHidden(false)
   }, [lastIndex]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => stopSpeaking, [])
 
@@ -55,17 +60,24 @@ export function InterviewRun({ session, busy, act, onLeave }: Props) {
       <header className="page-head">
         <h1>{where}</h1>
       </header>
-      {last && (
+      {last && closing && (
         <section className="card interviewer" aria-label="Interviewer">
-          {!(hidden && !!session.current) && last.text.split(/\n\s*\n/).map((p, i) => <p key={i} className="prompt">{p}</p>)}
-          {hidden && !!session.current && <p className="hint">Text hidden. Listen, then answer.</p>}
-          <div className="row">
-            <button type="button" className="btn" onClick={() => speak(last.text)}>Play again</button>
-            <label className="check">
-              <input type="checkbox" checked={hidden} onChange={() => setHidden(!hidden)} />
-              Hide text until I answer
-            </label>
-          </div>
+          <p className="prompt">That's the end of the interview.</p>
+        </section>
+      )}
+      {last && !closing && (
+        <section className="card interviewer" aria-label="Interviewer">
+          {!hidden && last.text.split(/\n\s*\n/).map((p, i) => <p key={i} className="prompt">{p}</p>)}
+          {hidden && <p className="hint">Text hidden. Listen, then answer.</p>}
+          {canSpeak && (
+            <div className="row">
+              <button type="button" className="btn" onClick={() => speak(last.text)}>Play again</button>
+              <label className="check">
+                <input type="checkbox" checked={hideText} onChange={() => onHideText(!hideText)} />
+                Hide text until I answer
+              </label>
+            </div>
+          )}
         </section>
       )}
       {session.current ? (

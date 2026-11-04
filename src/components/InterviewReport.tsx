@@ -21,7 +21,7 @@ function ScoreList({ scores }: { scores: Scores }) {
   return (
     <ul className="scores">
       {(Object.keys(SCORE_LABEL) as (keyof Scores)[]).map((k) => (
-        <li key={k}><span>{SCORE_LABEL[k]}</span> <b className="mono">{scores[k]}/5</b></li>
+        <li key={k}><span>{SCORE_LABEL[k]}</span> <b className="mono">{scores[k]}/4</b></li>
       ))}
     </ul>
   )

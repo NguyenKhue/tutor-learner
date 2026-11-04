@@ -41,6 +41,7 @@ export function InterviewsPage() {
                   {s.state === 'done' && s.report && (
                     <span className="hint">{s.report.levelMet ? 'Level met' : 'Level not met yet'}</span>
                   )}
+                  {s.state !== 'done' && <span className="hint">In progress</span>}
                 </div>
                 <span className="hint">{s.created.slice(0, 10)}</span>
                 <span className="hint">{`${LEVEL_LABEL[s.setup.level]} level`}</span>

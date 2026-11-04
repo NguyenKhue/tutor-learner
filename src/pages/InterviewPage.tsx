@@ -6,6 +6,16 @@ import { InterviewRun } from '../components/InterviewRun'
 import { Skeleton, Working } from '../components/Loading'
 import type { InterviewSession, InterviewState, Voice } from '../lib/types'
 
+const HIDE_KEY = 'tutor.interview.hideText'
+
+const readHide = (): boolean => {
+  try {
+    return localStorage.getItem(HIDE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
 const WAITING: Partial<Record<InterviewState, string>> = {
   researching: 'Searching the web',
   planning: 'Preparing your interview',
@@ -21,6 +31,15 @@ export function InterviewPage() {
   const [failed, setFailed] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [dropped, setDropped] = useState<number[]>([])
+  const [hideText, setHideText] = useState(readHide)
+  const changeHide = (hide: boolean) => {
+    setHideText(hide)
+    try {
+      localStorage.setItem(HIDE_KEY, hide ? '1' : '0')
+    } catch {
+      // storage is blocked: the setting lasts until the page closes
+    }
+  }
 
   const load = useCallback((keepError = false) => api.get<InterviewSession>(`/api/interview?id=${encodeURIComponent(id)}`)
     .then((s) => { setSession(s); if (!keepError) setFailed(null) })
@@ -72,6 +91,37 @@ export function InterviewPage() {
     )
   }
 
+  if (session.state === 'review') {
+    const items = session.research ?? []
+    const keptIndexes = items.map((_, i) => i).filter((i) => !dropped.includes(i))
+    return (
+      <>
+        <header className="page-head">
+          <h1>Check the research</h1>
+          <p>Untick anything that looks wrong. The interviewer will use the rest.</p>
+        </header>
+        {session.error && <p className="hint" role="alert">{session.error.message}</p>}
+        {items.length === 0 && !session.error && <p className="hint">Nothing was found. You can still start.</p>}
+        <ul className="research-list">
+          {items.map((it, i) => (
+            <li key={i}>
+              <label className="check">
+                <input type="checkbox" checked={!dropped.includes(i)} onChange={() => setDropped(dropped.includes(i) ? dropped.filter((x) => x !== i) : [...dropped, i])} />
+                <span>{it.text}</span>
+              </label>
+              {it.url && <a className="hint" href={it.url} target="_blank" rel="noreferrer">{it.url}</a>}
+            </li>
+          ))}
+        </ul>
+        {alert}
+        <div className="row">
+          <button type="button" className="btn primary wide" disabled={busy} onClick={() => void post('research', { kept: keptIndexes })}>Start interview</button>
+          {items.length === 0 && <button type="button" className="btn" disabled={busy} onClick={() => void post('retry')}>Search again</button>}
+        </div>
+      </>
+    )
+  }
+
   if (session.error) {
     return (
       <>
@@ -97,39 +147,14 @@ export function InterviewPage() {
     )
   }
 
-  if (session.state === 'review') {
-    const items = session.research ?? []
-    const keptIndexes = items.map((_, i) => i).filter((i) => !dropped.includes(i))
-    return (
-      <>
-        <header className="page-head">
-          <h1>Check the research</h1>
-          <p>Untick anything that looks wrong. The interviewer will use the rest.</p>
-        </header>
-        {items.length === 0 && <p className="hint">Nothing was found. You can still start.</p>}
-        <ul className="research-list">
-          {items.map((it, i) => (
-            <li key={i}>
-              <label className="check">
-                <input type="checkbox" checked={!dropped.includes(i)} onChange={() => setDropped(dropped.includes(i) ? dropped.filter((x) => x !== i) : [...dropped, i])} />
-                <span>{it.text}</span>
-              </label>
-              {it.url && <a className="hint" href={it.url} target="_blank" rel="noreferrer">{it.url}</a>}
-            </li>
-          ))}
-        </ul>
-        {alert}
-        <button type="button" className="btn primary wide" disabled={busy} onClick={() => void post('research', { kept: keptIndexes })}>Start interview</button>
-      </>
-    )
-  }
-
   return (
     <>
       {alert}
       <InterviewRun
         session={session}
         busy={busy}
+        hideText={hideText}
+        onHideText={changeHide}
         act={async (action, extra) => { await post(action, extra) }}
         onLeave={() => navigate('/interview')}
       />
