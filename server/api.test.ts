@@ -8,6 +8,7 @@ import type { Question } from '../src/lib/types'
 import { createApiMiddleware } from './api'
 import { ClaudeError } from './claude'
 import { GRADE_SCHEMA, LESSON_SCHEMA, QUESTIONS_SCHEMA } from './prompts'
+import { PLAN_SCHEMA, REPORT_SCHEMA, RESEARCH_SCHEMA, ROUND_SIZE, TURN_SCHEMA } from './interview/prompts'
 import { CLASSIFY_SCHEMA, READING_GRADE_SCHEMA, READING_QUIZ_SCHEMA } from './reading/prompts'
 import { SpeechError, type SpeechService } from './speech'
 import { makeTestVault } from './testVault'
@@ -20,6 +21,47 @@ afterEach(async () => {
   for (const c of cleanups.reverse()) await c()
   cleanups = []
 })
+
+function interviewPlan() {
+  return {
+    rounds: [{
+      kind: 'hr',
+      persona: 'Ann, recruiter',
+      intro: 'Hello.',
+      competencies: ['a', 'b'],
+      questions: Array.from({ length: ROUND_SIZE.hr }, (_, i) => ({
+        prompt: `Question ${i}`,
+        type: 'hr',
+        source: { url: 'https://example.com/x' },
+        rubric: { mid: ['m'], senior: ['s'], lead: ['l'] },
+        probes: ['p'],
+      })),
+    }],
+  }
+}
+
+function interviewReport() {
+  return {
+    levelMet: true,
+    summary: 'Good.',
+    questions: [{ q: '0-0', scores: { reasoning: 3, depth: 3, structure: 3, english: 3, length: 3 }, missed: ['a'], sample: 's', englishNotes: [] }],
+    topFixes: [],
+    nextSteps: { notes: [], topics: [], drills: [], gaps: [], focus: 'f' },
+    weakSpots: [{ kind: 'content', key: 'no-numbers', label: 'No numbers' }],
+  }
+}
+
+const SETUP = { source: 'Android engineer at Acme', level: 'senior', rounds: ['hr'], topics: [], web: false, readAloud: false }
+
+/** Polls an interview until it reaches `state`. */
+async function reach(s: Awaited<ReturnType<typeof start>>, id: string, state: string) {
+  for (let i = 0; i < 100; i++) {
+    const r = await s.get(`/api/interview?id=${id}`)
+    if (r.body.state === state) return r.body
+    await new Promise((res) => setTimeout(res, 20))
+  }
+  throw new Error(`never reached ${state}`)
+}
 
 const AUDIO_ID = '11111111-1111-4111-8111-111111111111'
 
@@ -39,7 +81,7 @@ function fakeSpeech(file: string): SpeechService {
   }
 }
 
-async function start(opts: { claudeFail?: ClaudeError; prefetch?: boolean } = {}) {
+async function start(opts: { claudeFail?: ClaudeError; prefetch?: boolean; holdTurn?: Promise<void> } = {}) {
   const v = makeTestVault(
     [
       { topic: 'Kotlin', name: '01 Null safety', type: 'concept', order: 1, sources: ['[[Notes/A]]'] },
@@ -60,6 +102,12 @@ async function start(opts: { claudeFail?: ClaudeError; prefetch?: boolean } = {}
     if (schema === GRADE_SCHEMA) return { grade: { ok: true, why: 'good', missing: [], feedback: 'f' }, english: null } as T
     if (schema === CLASSIFY_SCHEMA) return { notes: [...prompt.matchAll(/^PATH: (.+)$/gm)].map((m) => ({ path: m[1], topic: 'Kotlin', priority: 'high', minutes: 3, why: 'w' })) } as T
     if (schema === READING_QUIZ_SCHEMA) return { questions: ['a', 'b', 'c'].map((q) => ({ q, kind: 'open', prompt: q, criteria: ['x', 'y'] })) } as T
+    if (schema === PLAN_SCHEMA) return interviewPlan() as T
+    if (schema === TURN_SCHEMA) {
+      await opts.holdTurn
+      return { say: 'Thanks.', action: 'next' } as T
+    }
+    if (schema === REPORT_SCHEMA) return interviewReport() as T
     if (schema === READING_GRADE_SCHEMA) return { results: ['r1', 'r2', 'r3'].map((q) => ({ q, ok: true, why: 'w', missing: [], feedback: 'f' })), english: null } as T
     throw new Error('schema')
   }
@@ -69,7 +117,13 @@ async function start(opts: { claudeFail?: ClaudeError; prefetch?: boolean } = {}
     claudeCalls.push(schema)
     return counted<T>(prompt, schema)
   }
-  const mw = createApiMiddleware({ configFile, dataDir }, { claude: claudeFn, today: () => day, prefetch: opts.prefetch ?? false, speech: fakeSpeech(path.join(dataDir, 'clip.m4a')) })
+  const webCalls: object[] = []
+  const claudeWeb = async <T,>(_prompt: string, schema: object): Promise<T> => {
+    webCalls.push(schema)
+    if (schema !== RESEARCH_SCHEMA) throw new Error('schema')
+    return { items: [{ kind: 'company', text: 'Acme builds apps', url: 'https://acme.com' }] } as T
+  }
+  const mw = createApiMiddleware({ configFile, dataDir }, { claude: claudeFn, claudeWeb, today: () => day, prefetch: opts.prefetch ?? false, speech: fakeSpeech(path.join(dataDir, 'clip.m4a')) })
   const server = http.createServer((req, res) => mw(req as never, res as never, () => {
     res.statusCode = 404
     res.end('next')
@@ -87,7 +141,7 @@ async function start(opts: { claudeFail?: ClaudeError; prefetch?: boolean } = {}
     const r = await fetch(base + p, { method: 'POST', headers, body: JSON.stringify(body) })
     return { status: r.status, body: await r.json() }
   }
-  return { base, get, post, vault: v.vault, setDay: (d: string) => (day = d), claudeCalls }
+  return { base, get, post, vault: v.vault, setDay: (d: string) => (day = d), claudeCalls, webCalls, dataDir }
 }
 
 test('overview locks today\'s list', async () => {
@@ -314,4 +368,71 @@ test('a recording from another site, or an empty one, is refused', async () => {
   const { base } = await start()
   expect((await fetch(`${base}/api/speech`, { method: 'POST', headers: { Origin: 'http://evil.test' }, body: 'x' })).status).toBe(403)
   expect((await fetch(`${base}/api/speech`, { method: 'POST', headers: { Origin: base } })).status).toBe(400)
+})
+
+test('a mock interview runs from setup to report over HTTP', async () => {
+  const s = await start()
+  const made = await s.post('/api/interview', { ...SETUP, web: true })
+  expect(made.status).toBe(200)
+  const id = made.body.id as string
+  const review = await reach(s, id, 'review')
+  expect(review.research).toHaveLength(1)
+  expect(s.webCalls).toEqual([RESEARCH_SCHEMA])
+  const kept = await s.post('/api/interview/research', { id, kept: [0] })
+  expect(kept.status).toBe(200)
+  const running = await reach(s, id, 'running')
+  expect(running.current.q).toBe('0-0')
+
+  const answered = await s.post('/api/interview/answer', { id, text: 'My answer', voice: { audio: AUDIO_ID, seconds: 12 } })
+  expect(answered.status).toBe(200)
+  expect(answered.body.turns.at(-1).voice).toEqual({ audio: AUDIO_ID, seconds: 12 })
+  await reach(s, id, 'running')
+  for (let i = 0; i < 4; i++) expect((await s.post('/api/interview/skip', { id })).status).toBe(200)
+  const finished = await s.post('/api/interview/finish', { id })
+  expect(finished.status).toBe(200)
+  const done = await reach(s, id, 'done')
+  expect(done.report.summary).toBe('Good.')
+
+  expect((await s.get('/api/interviews')).body.map((x: { id: string }) => x.id)).toEqual([id])
+  expect(Array.isArray((await s.get('/api/interview/weak-spots')).body)).toBe(true)
+  expect(fs.existsSync(path.join(s.dataDir, 'interviews.json'))).toBe(true)
+  expect((await s.post('/api/interview/retry', { id })).status).toBe(409)
+  expect((await s.post('/api/interview/practice', { id, q: '0-0', text: 'again', voice: { audio: '../x', seconds: 1 } })).status).toBe(400)
+  expect((await s.get('/api/interview?id=nope')).status).toBe(404)
+  expect((await s.get('/api/interview')).status).toBe(400)
+})
+
+test('a bad setup is refused with 400', async () => {
+  const s = await start()
+  const bad = [
+    { ...SETUP, rounds: [] },
+    { ...SETUP, rounds: ['hr', 'party'] },
+    { ...SETUP, level: 'god' },
+    { ...SETUP, source: 'x'.repeat(20_001) },
+    { ...SETUP, topics: [1] },
+    { ...SETUP, web: 'yes' },
+  ]
+  for (const b of bad) expect((await s.post('/api/interview', b)).status).toBe(400)
+  expect((await s.get('/api/interviews')).body).toEqual([])
+})
+
+test('answering twice at once returns 409 for the second', async () => {
+  let release!: () => void
+  const s = await start({ holdTurn: new Promise<void>((r) => (release = r)) })
+  const id = (await s.post('/api/interview', SETUP)).body.id as string
+  await reach(s, id, 'running')
+  const [a, b] = await Promise.all([
+    s.post('/api/interview/answer', { id, text: 'one' }),
+    s.post('/api/interview/answer', { id, text: 'two' }),
+  ])
+  expect([a.status, b.status].sort()).toEqual([200, 409])
+  release()
+  await reach(s, id, 'running')
+})
+
+test('interview routes refuse another origin', async () => {
+  const s = await start()
+  expect((await s.post('/api/interview', SETUP, 'http://evil.test')).status).toBe(403)
+  expect((await s.post('/api/interview/skip', { id: 'x' }, null)).status).toBe(403)
+  expect((await fetch(`${s.base}/api/interviews`, { headers: { 'Sec-Fetch-Site': 'cross-site' } })).status).toBe(403)
 })
