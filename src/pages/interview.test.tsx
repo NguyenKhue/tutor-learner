@@ -250,7 +250,20 @@ test('a practice that fails shows its error and Try again', async () => {
   expect(await screen.findByText('Grading broke', {}, { timeout: 4000 })).toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: 'Try again' }))
   expect(calls.find((c) => c.path === '/api/interview/retry')?.body).toEqual({ id: 's1' })
+  expect(await screen.findByText('Grading your new answer')).toBeInTheDocument()
+  expect(screen.queryByText('Grading broke')).toBeNull()
 }, 10000)
+
+test('only the latest errored practice entry offers Try again', async () => {
+  const err = { code: 'failed' as const, message: 'Grading broke' }
+  mockApi({ 'GET /api/overview': overview(), 'GET /api/interview': doneSession('2026-11-03T10:00:00Z', {
+    practice: [{ q: '0-0', answer: 'one', at: '2026-11-04', error: err }, { q: '0-0', answer: 'two', at: '2026-11-04', error: err }],
+  }) })
+  goTo('/interview/s1')
+  render(<App />)
+  await screen.findAllByText('Grading broke')
+  expect(screen.getAllByRole('button', { name: 'Try again' })).toHaveLength(1)
+})
 
 test('a 409 reloads the session and keeps the error visible', async () => {
   const user = userEvent.setup()

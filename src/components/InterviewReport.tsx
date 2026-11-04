@@ -62,6 +62,7 @@ export function InterviewReport({ session, busy, practice, retry }: Props) {
     setText('')
     setVoice(null)
   }
+  const lastErrored = session.practice.map((p) => Boolean(p.error)).lastIndexOf(true)
   const reviews = new Map(report.questions.map((r) => [r.q, r]))
 
   return (
@@ -116,7 +117,7 @@ export function InterviewReport({ session, busy, practice, retry }: Props) {
                       {p.error && (
                         <>
                           <p className="hint" role="alert">{p.error.message}</p>
-                          <button type="button" className="btn" disabled={busy} onClick={() => void retry()}>Try again</button>
+                          {p === session.practice[lastErrored] && <button type="button" className="btn" disabled={busy} onClick={() => void retry()}>Try again</button>}
                         </>
                       )}
                     </div>

@@ -636,6 +636,23 @@ test('practice saves the answer first and keeps it when grading fails', async ()
   expect(f.practices).toHaveLength(2)
 })
 
+test('a practice stopped by a restart shows an error and retry regrades it', async () => {
+  const f = fake()
+  const { service, store, file, id } = await done(f)
+  await store.update((x) => {
+    x.sessions.find((y) => y.id === id)!.practice.push({ q: '0-0', answer: 'orphan', at: '2026-11-04' })
+  })
+  const restarted = make(f, file).service
+  const shownNow = await restarted.get(id)
+  expect(shownNow.practice[0].error).toEqual({ code: 'failed', message: 'Stopped before finishing. Try again.' })
+  expect((await store.read()).sessions.find((y) => y.id === id)!.practice[0].error).toBeUndefined()
+  await restarted.retry(id)
+  await restarted.idle()
+  const ok = await restarted.get(id)
+  expect(ok.practice[0].error).toBeUndefined()
+  expect(ok.practice[0].result).toMatchObject({ q: '0-0' })
+})
+
 test('practice needs a done session', async () => {
   const f = fake()
   const { service, id } = await started(f)

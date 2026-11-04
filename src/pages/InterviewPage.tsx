@@ -24,7 +24,7 @@ export function InterviewPage() {
 
   const load = useCallback((keepError = false) => api.get<InterviewSession>(`/api/interview?id=${encodeURIComponent(id)}`)
     .then((s) => { setSession(s); if (!keepError) setFailed(null) })
-    .catch((e) => setFailed(e instanceof Error ? e.message : 'Could not load the interview.')), [id])
+    .catch((e) => { if (!keepError) setFailed(e instanceof Error ? e.message : 'Could not load the interview.') }), [id])
 
   useEffect(() => { void load() }, [load])
 
@@ -45,7 +45,7 @@ export function InterviewPage() {
       return true
     } catch (e) {
       setFailed(e instanceof Error ? e.message : 'That did not work.')
-      await load(true) // the server may have moved on (409): show where it really is
+      await load(true).catch(() => undefined) // the server may have moved on (409): show where it really is
       return false
     } finally {
       setBusy(false)

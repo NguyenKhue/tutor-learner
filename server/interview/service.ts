@@ -86,6 +86,10 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
     if (WORKING.includes(s.state) && !running.has(s.id) && !s.error) {
       return { ...s, error: { code: 'failed', message: 'Stopped before finishing. Try again.' } }
     }
+    // A practice answer still ungraded with no job lost its grader in a restart: show it as failed.
+    if (s.state === 'done' && !running.has(s.id) && s.practice.some((p) => !p.result && !p.error)) {
+      return { ...s, practice: s.practice.map((p) => (p.result || p.error ? p : { ...p, error: { code: 'failed' as const, message: 'Stopped before finishing. Try again.' } })) }
+    }
     return s
   }
 
@@ -380,7 +384,7 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
         const x = f.sessions.find((y) => y.id === id)
         if (!x) throw new InterviewError('not-found', 'Interview not found.')
         if (running.has(id)) throw new InterviewError('busy', 'Still working.')
-        const lastPractice = x.state === 'done' ? x.practice.map((p) => Boolean(p.error)).lastIndexOf(true) : -1
+        const lastPractice = x.state === 'done' ? shown(x).practice.map((p) => Boolean(p.error)).lastIndexOf(true) : -1
         if (lastPractice >= 0) {
           background(id, (release) => grade(id, lastPractice, release))
           delete x.practice[lastPractice].error
