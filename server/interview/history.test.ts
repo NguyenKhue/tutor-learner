@@ -88,3 +88,19 @@ test('a weak spot seen once is not recurring', () => {
   expect(summarizeWeakSpots([s1, s2])).toEqual([])
   expect(knownWeakKeys([s1, s2]).sort()).toEqual(['x', 'z'])
 })
+
+test('a weak re-ask refreshes the due date', () => {
+  const first = session({ id: 'a', created: '2026-10-01', questions: [{ prompt: 'weak', reasoning: 1, depth: 1 }] })
+  const again = session({ id: 'b', created: '2026-11-03', questions: [{ prompt: 'weak, reworded', reask: 'weak', reasoning: 2, depth: 3 }] })
+  expect(reaskQueue([first, again], '2026-11-05', ['technical'])).toEqual([])
+  expect(reaskQueue([first, again], '2026-11-06', ['technical'])).toEqual([{ round: 'technical', prompt: 'weak' }])
+  // a time part in today is ignored
+  expect(reaskQueue([first, again], '2026-11-06T09:00:00.000Z', ['technical'])).toHaveLength(1)
+})
+
+test('a key repeated within one session counts once', () => {
+  const s1 = session({ id: 'a', created: '2026-10-01', questions: [], weak: [spot('x'), spot('x')] })
+  expect(summarizeWeakSpots([s1])).toEqual([])
+  const s2 = session({ id: 'b', created: '2026-10-02', questions: [], weak: [spot('x')] })
+  expect(summarizeWeakSpots([s1, s2])[0]).toMatchObject({ key: 'x', sessions: 2 })
+})

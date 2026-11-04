@@ -45,6 +45,7 @@ const PLANNED_QUESTION = {
     source: { type: 'object', properties: { vault: STR, url: STR } },
     rubric: { type: 'object', properties: { mid: STRS, senior: STRS, lead: STRS }, required: ['mid', 'senior', 'lead'] },
     probes: STRS,
+    reask: STR,
   },
   required: ['prompt', 'type', 'source', 'rubric', 'probes'],
 }
@@ -207,6 +208,7 @@ export function buildPlanPrompt(a: {
   if (a.avoid.length) lines.push('', '## Questions asked in earlier interviews (do not repeat them)', ...a.avoid.map((q) => `- ${q}`))
   if (a.reask.length) {
     lines.push('', '## Questions Khue wants to be asked again (include each in its round, you may reword it)', ...a.reask.map((r) => `- [${r.round}] ${r.prompt}`))
+    lines.push('For each question that re-asks one of these, set "reask" to that prompt\'s exact original text, copied word for word. Leave "reask" out for every other question.')
   }
   lines.push('', '## Notes from the vault')
   for (const n of a.notes) lines.push('', `PATH: ${n.path}`, `TITLE: ${n.title}`, n.text)
@@ -332,7 +334,7 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string' && s.trim() !== '').map((s) => s.trim()) : [])
 
 /** Checks a plan: exactly the chosen rounds in order, the right number of questions, each with a rubric and a source. */
-export function validatePlan(raw: unknown, setup: InterviewSetup): PlannedRound[] {
+export function validatePlan(raw: unknown, setup: InterviewSetup, reaskPrompts: string[] = []): PlannedRound[] {
   const rounds = isObj(raw) && Array.isArray(raw.rounds) ? raw.rounds : []
   if (rounds.length !== setup.rounds.length) throw new Error(`expected ${setup.rounds.length} rounds, got ${rounds.length}`)
   return setup.rounds.map((kind, ri) => {
@@ -350,13 +352,18 @@ export function validatePlan(raw: unknown, setup: InterviewSetup): PlannedRound[
       const vault = typeof src.vault === 'string' && src.vault.trim() ? src.vault.trim() : undefined
       const url = typeof src.url === 'string' && src.url.trim() ? src.url.trim() : undefined
       if (!vault && !url) throw new Error(`${where} has no source`)
+      const prompt = q.prompt.trim()
+      // Keep `reask` only when it is exactly a queued prompt; a question whose own text is a queued prompt counts too.
+      const claimed = typeof q.reask === 'string' ? q.reask : ''
+      const reask = reaskPrompts.includes(claimed) ? claimed : reaskPrompts.includes(prompt) ? prompt : undefined
       return {
         q: `${ri}-${qi}`,
-        prompt: q.prompt.trim(),
+        prompt,
         type: q.type as PlannedQuestion['type'],
         source: { ...(vault ? { vault } : {}), ...(url ? { url } : {}) },
         rubric: { mid: strs(rub.mid), senior: strs(rub.senior), lead: strs(rub.lead) },
         probes: strs(q.probes),
+        ...(reask ? { reask } : {}),
       }
     })
     return {

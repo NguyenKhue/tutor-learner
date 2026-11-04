@@ -49,7 +49,7 @@ export function reaskQueue(sessions: InterviewSession[], today: string, rounds: 
   const taken = new Map<RoundKind, number>()
   const out: { round: RoundKind; prompt: string }[] = []
   const due = [...open.values()]
-    .filter((o) => rounds.includes(o.round) && (Date.parse(today) - Date.parse(o.date)) / DAY >= MIN_DAYS)
+    .filter((o) => rounds.includes(o.round) && (Date.parse(today.slice(0, 10)) - Date.parse(o.date)) / DAY >= MIN_DAYS)
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
   for (const o of due) {
     const n = taken.get(o.round) ?? 0
@@ -67,7 +67,7 @@ export function summarizeWeakSpots(sessions: InterviewSession[]): WeakSpotSummar
   const newest = done[done.length - 1]
   const by = new Map<string, WeakSpotSummary>()
   for (const s of done) {
-    for (const w of new Set(s.report!.weakSpots.map((x) => x.key)) ) {
+    for (const w of new Set(s.report!.weakSpots.map((x) => x.key))) {
       const spot = s.report!.weakSpots.find((x) => x.key === w)!
       const prev = by.get(w)
       by.set(w, { key: w, kind: spot.kind, label: spot.label, sessions: (prev?.sessions ?? 0) + 1, lastSeen: day(s), trend: 'still' })

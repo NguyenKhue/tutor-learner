@@ -642,25 +642,31 @@ test('practice needs a done session', async () => {
   await expect(service.practice(id, '0-0', 'x')).rejects.toMatchObject({ code: 'bad-state' })
 })
 
-test('planning puts due re-asks into the plan and marks them', async () => {
+function seedDone(file: { sessions: any[] }, created: string, q: string, reasoning: number, reask?: string) {
+  const s = file.sessions[file.sessions.length - 1]
+  s.created = created
+  s.state = 'done'
+  delete s.current
+  if (reask) s.plan[1].questions[Number(q.split('-')[1])].reask = reask
+  s.report = {
+    levelMet: false, summary: '', topFixes: [], weakSpots: [], nextSteps: { notes: [], topics: [], drills: [], gaps: [], focus: '' },
+    questions: [{ q, scores: { reasoning, depth: 3, structure: 3, english: 3, length: 3 }, missed: [], sample: '', englishNotes: [] }],
+  }
+}
+
+test('planning puts due re-asks into the plan and marks only the exact reask', async () => {
   const f = fake()
   const { service, store } = make(f)
-  const first = await service.create(setup())
+  await service.create(setup())
   await service.idle()
-  await store.update((file) => {
-    const s = file.sessions[0]
-    s.created = '2026-10-01'
-    s.state = 'done'
-    delete s.current
-    s.report = {
-      levelMet: false, summary: '', topFixes: [], weakSpots: [], nextSteps: { notes: [], topics: [], drills: [], gaps: [], focus: '' },
-      questions: [{ q: '1-2', scores: { reasoning: 1, depth: 3, structure: 3, english: 3, length: 3 }, missed: [], sample: '', englishNotes: [] }],
-    }
-  })
-  expect(first.id).toBe('s1')
+  await store.update((file) => seedDone(file, '2026-10-01', '1-2', 1))
   f.planResult = () => {
     const p = rawPlan(['hr', 'technical'], 'N')
-    p.rounds[1].questions[0].prompt = 'Q 1-2 reworded'
+    const qs = p.rounds[1].questions
+    qs[0].prompt = 'Reworded version'
+    ;(qs[0] as Record<string, unknown>).reask = 'Q 1-2'
+    qs[1].prompt = 'Q 1-2 is similar'
+    ;(qs[2] as Record<string, unknown>).reask = 'something not queued'
     return p
   }
   const second = await service.create(setup())
@@ -669,7 +675,61 @@ test('planning puts due re-asks into the plan and marks them', async () => {
   const s = await service.get(second.id)
   const marked = s.plan![1].questions.filter((q) => q.reask)
   expect(marked).toHaveLength(1)
-  expect(marked[0]).toMatchObject({ prompt: 'Q 1-2 reworded', reask: 'Q 1-2' })
+  expect(marked[0]).toMatchObject({ prompt: 'Reworded version', reask: 'Q 1-2' })
+})
+
+test('a weak question is re-asked, marked, and leaves the queue after a good re-answer', async () => {
+  const f = fake()
+  const { service, store } = make(f)
+  await service.create(setup())
+  await service.idle()
+  await store.update((file) => seedDone(file, '2026-10-01', '1-2', 1))
+  f.planResult = () => {
+    const p = rawPlan(['hr', 'technical'], 'N')
+    ;(p.rounds[1].questions[0] as Record<string, unknown>).reask = 'Q 1-2'
+    p.rounds[1].questions[0].prompt = 'Reworded version'
+    return p
+  }
+  const second = await service.create(setup())
+  await service.idle()
+  expect((await service.get(second.id)).plan![1].questions[0].reask).toBe('Q 1-2')
+  await store.update((file) => seedDone(file, '2026-10-10', '1-0', 4))
+  const third = await service.create(setup())
+  await service.idle()
+  expect(f.plans[2].prompt).not.toContain('Questions Khue wants to be asked again')
+  expect(third.id).toBe('s3')
+})
+
+test('finish works after the last answer cleared current', async () => {
+  const f = fake()
+  const { service, id, store } = await started(f)
+  await store.update((file) => {
+    file.sessions[0].current = { round: 1, q: '1-4', followups: 0 }
+  })
+  f.turnResult = () => ({ say: 'That is the end.', action: 'end_round' })
+  await service.answer(id, 'final')
+  await service.idle()
+  expect((await service.get(id)).current).toBeUndefined()
+  await service.finish(id)
+  await service.idle()
+  expect((await service.get(id)).state).toBe('done')
+})
+
+test('a second practice while grading is busy', async () => {
+  const f = fake()
+  const { service, id } = await done(f)
+  let open!: () => void
+  const gate = new Promise<void>((r) => (open = r))
+  const orig = f.claude
+  f.claude = async (p, s) => {
+    await gate
+    return orig(p, s)
+  }
+  await service.practice(id, '0-0', 'one')
+  await expect(service.practice(id, '0-0', 'two')).rejects.toMatchObject({ code: 'busy' })
+  open()
+  await service.idle()
+  expect((await service.get(id)).practice).toHaveLength(1)
 })
 
 test('weakSpots summarizes stored sessions', async () => {

@@ -49,38 +49,6 @@ export class InterviewError extends Error {
   }
 }
 
-const words = (s: string) => new Set(s.toLowerCase().match(/[a-z0-9]+/g) ?? [])
-const overlap = (a: string, b: string) => {
-  const x = words(a)
-  const y = words(b)
-  let same = 0
-  for (const w of x) if (y.has(w)) same++
-  return same / (x.size + y.size - same || 1)
-}
-
-/**
- * Marks planned questions that come from the re-ask queue: `reask` = the original prompt. The model may reword a
- * re-ask, so each queued prompt is matched, within its round kind, to the unclaimed question that is the same text or
- * the most similar one (at least 40% shared words). Done here, not by the model, so the mark never goes missing.
- */
-function markReasks(rounds: PlannedRound[], queue: { round: RoundKind; prompt: string }[]) {
-  const claimed = new Set<unknown>()
-  for (const item of queue) {
-    let best: { q: PlannedRound['questions'][number]; score: number } | undefined
-    for (const r of rounds.filter((x) => x.kind === item.round)) {
-      for (const q of r.questions) {
-        if (claimed.has(q)) continue
-        const score = q.prompt.trim() === item.prompt.trim() ? 1 : overlap(q.prompt, item.prompt)
-        if (score >= 0.4 && (!best || score > best.score)) best = { q, score }
-      }
-    }
-    if (best) {
-      best.q.reask = item.prompt
-      claimed.add(best.q)
-    }
-  }
-}
-
 const errorOf = (e: unknown): NonNullable<InterviewSession['error']> =>
   e instanceof ClaudeError
     ? { code: e.code, message: e.message }
@@ -147,8 +115,7 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
         reask,
       })
       const raw = await claude<unknown>(prompt, PLAN_SCHEMA)
-      const rounds = validatePlan(raw, s.setup)
-      markReasks(rounds, reask)
+      const rounds = validatePlan(raw, s.setup, reask.map((r) => r.prompt))
       await patch(id, (x) => {
         release()
         x.plan = rounds
