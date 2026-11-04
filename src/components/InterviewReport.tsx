@@ -13,8 +13,8 @@ const KEEP_DAYS = 30
 interface Props {
   session: InterviewSession
   busy: boolean
-  practice(q: string, text: string, voice: Voice | null): Promise<void>
-  retry(): Promise<void>
+  practice(q: string, text: string, voice: Voice | null): Promise<boolean>
+  retry(): Promise<unknown>
 }
 
 function ScoreList({ scores }: { scores: Scores }) {
@@ -34,12 +34,12 @@ function Review({ r }: { r: QuestionReport }) {
       {r.missed.length > 0 && (
         <div className="grade-block">
           <div className="grade-label">You missed</div>
-          <ul>{r.missed.map((m) => <li key={m}>{m}</li>)}</ul>
+          <ul>{r.missed.map((m, i) => <li key={i}>{m}</li>)}</ul>
         </div>
       )}
       {r.sample.trim() && <details className="more"><summary>A strong answer</summary><SampleAnswer text={r.sample} /></details>}
       {r.englishNotes.length > 0 && (
-        <details className="more"><summary>Your English</summary><ul>{r.englishNotes.map((n) => <li key={n}>{n}</li>)}</ul></details>
+        <details className="more"><summary>Your English</summary><ul>{r.englishNotes.map((n, i) => <li key={i}>{n}</li>)}</ul></details>
       )}
     </>
   )
@@ -57,13 +57,12 @@ export function InterviewReport({ session, busy, practice, retry }: Props) {
   const expired = Date.now() - new Date(session.created).getTime() > KEEP_DAYS * 86_400_000
   const promptOf = (q: string) => session.plan?.flatMap((r) => r.questions).find((x) => x.q === q)?.prompt ?? q
   const send = async (q: string) => {
-    await practice(q, text, voice)
+    if (!(await practice(q, text, voice))) return
     setOpen(null)
     setText('')
     setVoice(null)
   }
   const reviews = new Map(report.questions.map((r) => [r.q, r]))
-  const lastPracticeFailed = session.practice.at(-1)?.error
 
   return (
     <>
@@ -113,7 +112,13 @@ export function InterviewReport({ session, busy, practice, retry }: Props) {
                       <div className="grade-label">Your new answer</div>
                       <p>{p.answer}</p>
                       {p.result && <Review r={p.result} />}
-                      {p.error && <p className="hint" role="alert">{p.error.message}</p>}
+                      {!p.result && !p.error && <Working text="Grading your new answer" />}
+                      {p.error && (
+                        <>
+                          <p className="hint" role="alert">{p.error.message}</p>
+                          <button type="button" className="btn" disabled={busy} onClick={() => void retry()}>Try again</button>
+                        </>
+                      )}
                     </div>
                   ))}
                   {open === pq.q ? (
@@ -134,8 +139,6 @@ export function InterviewReport({ session, busy, practice, retry }: Props) {
         )
       })}
 
-      {busy && <Working text="Grading your new answer" />}
-      {lastPracticeFailed && !busy && <button type="button" className="btn" onClick={() => void retry()}>Try again</button>}
 
       <section className="card" aria-label="Next steps">
         <div className="grade-label">What to study next</div>

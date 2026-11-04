@@ -222,3 +222,117 @@ test('weak spots empty state', async () => {
   render(<App />)
   expect(await screen.findByText('Do two interviews to see patterns.')).toBeInTheDocument()
 })
+
+test('practice shows pending, then the result when a later poll brings it', async () => {
+  const pending = doneSession('2026-11-03T10:00:00Z', { practice: [{ q: '0-0', answer: 'Better', at: '2026-11-04' }] })
+  const graded = { ...pending, practice: [{ ...pending.practice[0], result: { ...report.questions[0], missed: ['Polled result item'] } }] }
+  let gets = 0
+  mockApi({ 'GET /api/overview': overview(), 'GET /api/interview': () => (++gets < 2 ? pending : graded) })
+  goTo('/interview/s1')
+  render(<App />)
+  expect(await screen.findByText('Grading your new answer')).toBeInTheDocument()
+  expect(await screen.findByText('Polled result item', {}, { timeout: 4000 })).toBeInTheDocument()
+  expect(screen.queryByText('Grading your new answer')).toBeNull()
+}, 10000)
+
+test('a practice that fails shows its error and Try again', async () => {
+  const user = userEvent.setup()
+  const pending = doneSession('2026-11-03T10:00:00Z', { practice: [{ q: '0-0', answer: 'Better', at: '2026-11-04' }] })
+  const failed = { ...pending, practice: [{ ...pending.practice[0], error: { code: 'failed' as const, message: 'Grading broke' } }] }
+  let gets = 0
+  const calls = mockApi({
+    'GET /api/overview': overview(),
+    'GET /api/interview': () => (++gets < 2 ? pending : failed),
+    'POST /api/interview/retry': pending,
+  })
+  goTo('/interview/s1')
+  render(<App />)
+  expect(await screen.findByText('Grading broke', {}, { timeout: 4000 })).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Try again' }))
+  expect(calls.find((c) => c.path === '/api/interview/retry')?.body).toEqual({ id: 's1' })
+}, 10000)
+
+test('a 409 reloads the session and keeps the error visible', async () => {
+  const user = userEvent.setup()
+  const running = session('s1', '2026-11-04T10:00:00Z', 'x', {
+    plan, current: { round: 0, q: '0-1', followups: 0 }, turns: [turn('interviewer', '0-1', 'Explain Flow.')],
+  })
+  const moved = { ...running, state: 'thinking' as const }
+  let gets = 0
+  mockApi({
+    'GET /api/overview': overview(),
+    'GET /api/interview': () => (++gets < 2 ? running : moved),
+    'POST /api/interview/answer': { status: 409, body: { error: 'busy' } },
+  })
+  synth()
+  goTo('/interview/s1')
+  render(<App />)
+  await user.type(await screen.findByLabelText('Your answer'), 'x')
+  await user.click(screen.getByRole('button', { name: 'Send answer' }))
+  expect(await screen.findByText('The interviewer is thinking')).toBeInTheDocument()
+  expect(screen.getByText('busy')).toBeInTheDocument()
+})
+
+test('a failed practice send keeps the box and the text', async () => {
+  const user = userEvent.setup()
+  mockApi({ 'GET /api/overview': overview(), 'GET /api/interview': doneSession(), 'POST /api/interview/practice': { status: 409, body: { error: 'busy' } } })
+  goTo('/interview/s1')
+  render(<App />)
+  await user.click(await screen.findByRole('button', { name: 'Practice again' }))
+  await user.type(screen.getByLabelText('Your answer'), 'Keep me')
+  await user.click(screen.getByRole('button', { name: 'Send answer' }))
+  expect(await screen.findByText('busy')).toBeInTheDocument()
+  expect(screen.getByLabelText('Your answer')).toHaveValue('Keep me')
+})
+
+const runningAnswered = () => session('s1', '2026-11-04T10:00:00Z', 'x', {
+  plan, current: { round: 0, q: '0-1', followups: 0 },
+  turns: [turn('interviewer', '0-0', 'Q1'), turn('candidate', '0-0', 'A1'), turn('interviewer', '0-1', 'Explain Flow.')],
+})
+
+test('End interview with an answer calls finish after confirming', async () => {
+  const user = userEvent.setup()
+  synth()
+  const calls = mockApi({ 'GET /api/overview': overview(), 'GET /api/interview': runningAnswered(), 'POST /api/interview/finish': { ...runningAnswered(), state: 'reporting' } })
+  goTo('/interview/s1')
+  render(<App />)
+  await user.click(await screen.findByRole('button', { name: 'End interview' }))
+  await user.click(screen.getByRole('button', { name: 'End and get report' }))
+  expect(calls.find((c) => c.path === '/api/interview/finish')?.body).toEqual({ id: 's1' })
+})
+
+test('End interview with nothing answered leaves to the list without finishing', async () => {
+  const user = userEvent.setup()
+  synth()
+  const first = session('s1', '2026-11-04T10:00:00Z', 'x', { plan, current: { round: 0, q: '0-0', followups: 0 }, turns: [turn('interviewer', '0-0', 'Q1')] })
+  const calls = mockApi({ 'GET /api/overview': overview(), 'GET /api/interview': first, 'GET /api/interviews': [] })
+  goTo('/interview/s1')
+  render(<App />)
+  await user.click(await screen.findByRole('button', { name: 'End interview' }))
+  await user.click(screen.getByRole('button', { name: 'Leave' }))
+  expect(await screen.findByText('No mock interviews yet.')).toBeInTheDocument()
+  expect(calls.some((c) => c.path === '/api/interview/finish')).toBe(false)
+})
+
+test('Finish calls finish when answers exist, else Leave interview shows', async () => {
+  const user = userEvent.setup()
+  synth()
+  const done = { ...runningAnswered(), current: undefined }
+  const calls = mockApi({ 'GET /api/overview': overview(), 'GET /api/interview': done, 'POST /api/interview/finish': { ...done, state: 'reporting' } })
+  goTo('/interview/s1')
+  render(<App />)
+  await user.click(await screen.findByRole('button', { name: 'Finish' }))
+  expect(calls.find((c) => c.path === '/api/interview/finish')?.body).toEqual({ id: 's1' })
+})
+
+test('with every question skipped, Leave interview replaces Finish', async () => {
+  synth()
+  const skipped = session('s1', '2026-11-04T10:00:00Z', 'x', {
+    plan, turns: [turn('interviewer', '0-0', 'Q1'), turn('candidate', '0-0', '', { skipped: true })],
+  })
+  mockApi({ 'GET /api/overview': overview(), 'GET /api/interview': skipped })
+  goTo('/interview/s1')
+  render(<App />)
+  expect(await screen.findByRole('button', { name: 'Leave interview' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Finish' })).toBeNull()
+})

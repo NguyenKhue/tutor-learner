@@ -22,13 +22,14 @@ export function InterviewPage() {
   const [busy, setBusy] = useState(false)
   const [dropped, setDropped] = useState<number[]>([])
 
-  const load = useCallback(() => api.get<InterviewSession>(`/api/interview?id=${encodeURIComponent(id)}`)
-    .then((s) => { setSession(s); setFailed(null) })
+  const load = useCallback((keepError = false) => api.get<InterviewSession>(`/api/interview?id=${encodeURIComponent(id)}`)
+    .then((s) => { setSession(s); if (!keepError) setFailed(null) })
     .catch((e) => setFailed(e instanceof Error ? e.message : 'Could not load the interview.')), [id])
 
   useEffect(() => { void load() }, [load])
 
-  const waiting = !!session && !session.error && session.state in WAITING
+  const waiting = !!session && !session.error && (session.state in WAITING
+    || (session.state === 'done' && session.practice.some((p) => !p.result && !p.error)))
   useEffect(() => {
     if (!waiting) return
     const timer = setInterval(() => void load(), 2000)
@@ -36,13 +37,16 @@ export function InterviewPage() {
   }, [waiting, load])
 
   /** Runs one action route; the server answers with the new session. */
-  const post = async (action: string, body: Record<string, unknown> = {}) => {
+  const post = async (action: string, body: Record<string, unknown> = {}): Promise<boolean> => {
     setBusy(true)
     try {
       setSession(await api.post<InterviewSession>(`/api/interview/${action}`, { id, ...body }))
       setFailed(null)
+      return true
     } catch (e) {
       setFailed(e instanceof Error ? e.message : 'That did not work.')
+      await load(true) // the server may have moved on (409): show where it really is
+      return false
     } finally {
       setBusy(false)
     }
@@ -87,6 +91,7 @@ export function InterviewPage() {
     return (
       <>
         <header className="page-head"><h1>Mock interview</h1></header>
+        {alert}
         <Working text={waitText} />
       </>
     )
@@ -125,7 +130,7 @@ export function InterviewPage() {
       <InterviewRun
         session={session}
         busy={busy}
-        act={(action, extra) => post(action, extra)}
+        act={async (action, extra) => { await post(action, extra) }}
         onLeave={() => navigate('/interview')}
       />
     </>

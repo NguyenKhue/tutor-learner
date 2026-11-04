@@ -86,7 +86,9 @@ export function InterviewRun({ session, busy, act, onLeave }: Props) {
         </section>
       ) : (
         <div className="row">
-          <button type="button" className="btn primary wide" disabled={busy} onClick={() => void act('finish')}>Finish</button>
+          {answered
+            ? <button type="button" className="btn primary wide" disabled={busy} onClick={() => void act('finish')}>Finish</button>
+            : <button type="button" className="btn primary wide" onClick={onLeave}>Leave interview</button>}
         </div>
       )}
     </>
