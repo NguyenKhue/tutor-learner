@@ -2,12 +2,13 @@ import type { CatalogEntry, InterviewSession, InterviewSetup, ResearchItem, Roun
 import { ClaudeError } from '../claude'
 import { buildVaultContext } from './context'
 import { reaskQueue, type WeakSpotSummary } from './history'
-import { PLAN_SCHEMA, RESEARCH_SCHEMA, buildPlanPrompt, buildResearchPrompt, validatePlan, validateResearch } from './prompts'
+import { PLAN_SCHEMA, RESEARCH_SCHEMA, TURN_SCHEMA, buildPlanPrompt, buildResearchPrompt, buildTurnPrompt, validatePlan, validateResearch, validateTurn } from './prompts'
 import type { createInterviewStore } from './store'
 
 const ROUND_ORDER: RoundKind[] = ['hr', 'technical', 'system_design', 'behavioral']
 const LEVELS = ['mid', 'senior', 'lead']
 const AVOID_LIMIT = 60
+const MAX_ANSWER = 8000
 const WORKING = ['researching', 'planning', 'thinking', 'reporting']
 
 export interface InterviewDeps {
@@ -177,6 +178,80 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
     return s
   }
 
+  /**
+   * Moves the interview on after a question: the next question of the round, the next round (with its intro), or,
+   * after the last round, nothing (state stays `running` with no `current`, so the client shows Finish).
+   * `say` is the interviewer's line; it is joined to the next prompt only when it is not empty.
+   */
+  function moveOn(x: InterviewSession, say: string, action: 'next' | 'end_round') {
+    const plan = x.plan ?? []
+    const cur = x.current!
+    const idx = Number(cur.q.split('-')[1])
+    const join = (...parts: string[]) => parts.filter((p) => p !== '').join('\n\n')
+    const speak = (round: number, q: string, text: string) => x.turns.push({ round, q, from: 'interviewer', text, at: today() })
+    x.state = 'running'
+    delete x.error
+    if (action === 'next' && idx + 1 < plan[cur.round].questions.length) {
+      const q = `${cur.round}-${idx + 1}`
+      speak(cur.round, q, join(say, plan[cur.round].questions[idx + 1].prompt))
+      x.current = { round: cur.round, q, followups: 0 }
+    } else if (cur.round + 1 < plan.length) {
+      const next = plan[cur.round + 1]
+      const q = `${cur.round + 1}-0`
+      speak(cur.round + 1, q, join(say, next.intro, next.questions[0].prompt))
+      x.current = { round: cur.round + 1, q, followups: 0 }
+    } else {
+      if (say) speak(cur.round, cur.q, say)
+      delete x.current
+    }
+  }
+
+  /** Asks Claude for the interviewer's reply to the saved candidate answer, then applies it. Used by answer and retry. */
+  async function turn(id: string, release: () => void) {
+    try {
+      const s = (await store.read()).sessions.find((x) => x.id === id)
+      if (!s) return
+      const cur = s.current
+      const plan = s.plan
+      if (!cur || !plan) throw new Error('The interview has no current question.')
+      const round = plan[cur.round]
+      const idx = Number(cur.q.split('-')[1])
+      const prompt = buildTurnPrompt({
+        round,
+        question: round.questions[idx],
+        turns: s.turns,
+        followups: cur.followups,
+        level: s.setup.level,
+        lastRound: cur.round === plan.length - 1,
+        lastQuestion: idx === round.questions.length - 1,
+      })
+      const result = validateTurn(await claude<unknown>(prompt, TURN_SCHEMA), cur.followups)
+      await patch(id, (x) => {
+        release()
+        if (result.action === 'followup') {
+          x.turns.push({ round: cur.round, q: cur.q, from: 'interviewer', text: result.say, at: today() })
+          x.current = { ...cur, followups: cur.followups + 1 }
+          x.state = 'running'
+          delete x.error
+        } else {
+          moveOn(x, result.say, result.action)
+        }
+      })
+    } catch (e) {
+      await patch(id, (x) => {
+        release()
+        x.error = errorOf(e)
+      })
+    }
+  }
+
+  function needRunning(x: InterviewSession | undefined): InterviewSession {
+    if (!x) throw new InterviewError('not-found', 'Interview not found.')
+    if (running.has(x.id)) throw new InterviewError('busy', 'Still working.')
+    if (x.state !== 'running' || !x.current || !x.plan) throw new InterviewError('bad-state', 'This interview is not waiting for an answer.')
+    return x
+  }
+
   const todo = (): never => {
     throw new InterviewError('bad-state', 'not implemented')
   }
@@ -219,9 +294,47 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
         return structuredClone(x)
       })
     },
-    answer: async () => todo(),
-    skip: async () => todo(),
-    retry: async () => todo(),
+    async answer(id, text, voice) {
+      if (typeof text !== 'string' || !text.trim()) throw new InterviewError('bad-state', 'Write or record an answer first.')
+      const answer = text.trim()
+      if (answer.length > MAX_ANSWER) throw new InterviewError('bad-state', `The answer is too long (max ${MAX_ANSWER} characters).`)
+      // Check, save the answer and start the job inside one update, so two calls cannot both get through.
+      return store.update((f) => {
+        const x = needRunning(f.sessions.find((y) => y.id === id))
+        background(id, (release) => turn(id, release))
+        x.turns.push({ round: x.current!.round, q: x.current!.q, from: 'candidate', text: answer, ...(voice ? { voice } : {}), at: today() })
+        x.state = 'thinking'
+        delete x.error
+        return structuredClone(x)
+      })
+    },
+    async skip(id) {
+      return store.update((f) => {
+        const x = needRunning(f.sessions.find((y) => y.id === id))
+        // No Claude call: the job only holds the busy token while this update runs.
+        background(id, async (release) => release())
+        const cur = x.current!
+        x.turns.push({ round: cur.round, q: cur.q, from: 'candidate', text: '', skipped: true, at: today() })
+        const last = Number(cur.q.split('-')[1]) === x.plan![cur.round].questions.length - 1
+        moveOn(x, '', last ? 'end_round' : 'next')
+        return structuredClone(x)
+      })
+    },
+    async retry(id) {
+      return store.update((f) => {
+        const x = f.sessions.find((y) => y.id === id)
+        if (!x) throw new InterviewError('not-found', 'Interview not found.')
+        if (running.has(id)) throw new InterviewError('busy', 'Still working.')
+        if (!shown(x).error) throw new InterviewError('bad-state', 'Nothing to retry.')
+        if (x.state === 'review' && x.setup.web && (x.research ?? []).length === 0) x.state = 'researching'
+        if (x.state === 'researching') background(id, (release) => research(id, release))
+        else if (x.state === 'planning') background(id, (release) => plan(id, release))
+        else if (x.state === 'thinking') background(id, (release) => turn(id, release))
+        else throw new InterviewError('bad-state', 'Nothing to retry.')
+        delete x.error
+        return structuredClone(x)
+      })
+    },
     finish: async () => todo(),
     practice: async () => todo(),
     weakSpots: async () => todo(),

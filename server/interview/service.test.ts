@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, expect, test, vi } from 'vitest'
 import type { CatalogEntry, InterviewSetup } from '../../src/lib/types'
 import { ClaudeError } from '../claude'
-import { PLAN_SCHEMA, RESEARCH_SCHEMA, ROUND_SIZE } from './prompts'
+import { PLAN_SCHEMA, RESEARCH_SCHEMA, ROUND_SIZE, TURN_SCHEMA } from './prompts'
 import * as history from './history'
 import { InterviewError, createInterviewService } from './service'
 import { createInterviewStore } from './store'
@@ -46,6 +46,8 @@ function rawPlan(kinds: string[], tag = 'Q') {
 interface Fake {
   plans: Array<{ prompt: string }>
   researches: Array<{ prompt: string }>
+  turns: Array<{ prompt: string }>
+  turnResult: () => unknown
   planResult: () => unknown
   researchResult: () => unknown
   claude: <T>(prompt: string, schema: object) => Promise<T>
@@ -56,9 +58,15 @@ function fake(): Fake {
   const f: Fake = {
     plans: [],
     researches: [],
+    turns: [],
+    turnResult: () => ({ say: 'Thanks.', action: 'next' }),
     planResult: () => rawPlan(['hr', 'technical']),
     researchResult: () => ({ items: [{ kind: 'company', text: 'Acme builds apps', url: 'https://acme.com' }, { kind: 'process', text: 'no link', url: '' }] }),
     claude: async <T>(prompt: string, schema: object) => {
+      if (schema === TURN_SCHEMA) {
+        f.turns.push({ prompt })
+        return f.turnResult() as T
+      }
       expect(schema).toBe(PLAN_SCHEMA)
       f.plans.push({ prompt })
       return f.planResult() as T
@@ -286,4 +294,195 @@ test('avoid ignores sessions that are not done', async () => {
   await service.create(setup())
   await service.idle()
   expect(f.plans[1].prompt).not.toContain('Q 0-0')
+})
+
+async function started(f: Fake, over: Partial<InterviewSetup> = {}) {
+  const m = make(f)
+  const created = await m.service.create(setup(over))
+  await m.service.idle()
+  return { ...m, id: created.id }
+}
+
+test('an answer is saved before Claude runs and kept when Claude fails', async () => {
+  const f = fake()
+  const { service, id } = await started(f)
+  let seen: Awaited<ReturnType<typeof service.get>> | undefined
+  f.turnResult = () => {
+    throw new ClaudeError('limit', 'Usage limit reached')
+  }
+  const claudeThrows = f.claude
+  f.claude = async (p, s) => {
+    seen = await service.get(id)
+    return claudeThrows(p, s)
+  }
+  const thinking = await service.answer(id, '  My answer  ', { audio: 'a', seconds: 3 })
+  expect(thinking.state).toBe('thinking')
+  await service.idle()
+  expect(seen?.turns.at(-1)).toMatchObject({ from: 'candidate', text: 'My answer', voice: { audio: 'a', seconds: 3 } })
+  const failed = await service.get(id)
+  expect(failed.state).toBe('thinking')
+  expect(failed.error).toEqual({ code: 'limit', message: 'Usage limit reached' })
+  expect(failed.turns).toHaveLength(2)
+
+  f.claude = claudeThrows
+  f.turnResult = () => ({ say: 'Good.', action: 'next' })
+  const retried = await service.retry(id)
+  expect(retried.error).toBeUndefined()
+  await service.idle()
+  const s = await service.get(id)
+  expect(s.state).toBe('running')
+  expect(s.error).toBeUndefined()
+  expect(s.turns).toHaveLength(3)
+  expect(s.turns.filter((t) => t.from === 'candidate')).toHaveLength(1)
+  expect(s.turns[2]).toMatchObject({ from: 'interviewer', q: '0-1', text: 'Good.\n\nQ 0-1' })
+  expect(s.current).toEqual({ round: 0, q: '0-1', followups: 0 })
+  expect(f.turns).toHaveLength(2)
+})
+
+test('follow-ups stop after two and the interview moves on', async () => {
+  const f = fake()
+  f.turnResult = () => ({ say: 'Tell me more?', action: 'followup' })
+  const { service, id } = await started(f)
+  await service.answer(id, 'one')
+  await service.idle()
+  let s = await service.get(id)
+  expect(s.current).toEqual({ round: 0, q: '0-0', followups: 1 })
+  expect(s.turns.at(-1)).toMatchObject({ from: 'interviewer', q: '0-0', text: 'Tell me more?' })
+  await service.answer(id, 'two')
+  await service.idle()
+  expect((await service.get(id)).current?.followups).toBe(2)
+  await service.answer(id, 'three')
+  await service.idle()
+  s = await service.get(id)
+  expect(s.current).toEqual({ round: 0, q: '0-1', followups: 0 })
+  expect(s.turns.at(-1)).toMatchObject({ from: 'interviewer', q: '0-1', text: 'Q 0-1' })
+})
+
+test('the last question of a round opens the next round with its intro', async () => {
+  const f = fake()
+  const { service, id } = await started(f)
+  for (let i = 0; i < ROUND_SIZE.hr - 1; i++) {
+    await service.answer(id, `a${i}`)
+    await service.idle()
+  }
+  expect((await service.get(id)).current?.q).toBe('0-4')
+  f.turnResult = () => ({ say: 'That is all for this round.', action: 'next' })
+  await service.answer(id, 'last')
+  await service.idle()
+  const s = await service.get(id)
+  expect(s.current).toEqual({ round: 1, q: '1-0', followups: 0 })
+  expect(s.turns.at(-1)).toMatchObject({ round: 1, q: '1-0', from: 'interviewer', text: 'That is all for this round.\n\nHello from technical.\n\nQ 1-0' })
+})
+
+test('the last answer of the last round leaves the session ready to finish', async () => {
+  const f = fake()
+  const { service, id, store } = await started(f)
+  await store.update((file) => {
+    const s = file.sessions[0]
+    s.current = { round: 1, q: '1-4', followups: 0 }
+  })
+  f.turnResult = () => ({ say: 'Thank you, that is the end.', action: 'end_round' })
+  await service.answer(id, 'final')
+  await service.idle()
+  const s = await service.get(id)
+  expect(s.state).toBe('running')
+  expect(s.current).toBeUndefined()
+  expect(s.error).toBeUndefined()
+  expect(s.turns.at(-1)).toMatchObject({ from: 'interviewer', text: 'Thank you, that is the end.' })
+})
+
+test('a second answer while one is being handled is refused as busy', async () => {
+  const f = fake()
+  const { service, id } = await started(f)
+  let open!: () => void
+  const gate = new Promise<void>((r) => (open = r))
+  const orig = f.claude
+  f.claude = async (p, s) => {
+    await gate
+    return orig(p, s)
+  }
+  await service.answer(id, 'first')
+  await expect(service.answer(id, 'second')).rejects.toMatchObject({ code: 'busy' })
+  await expect(service.skip(id)).rejects.toMatchObject({ code: 'busy' })
+  open()
+  await service.idle()
+  const s = await service.get(id)
+  expect(s.turns.filter((t) => t.from === 'candidate')).toHaveLength(1)
+})
+
+test('skip moves on without calling Claude', async () => {
+  const f = fake()
+  const { service, id } = await started(f)
+  const s = await service.skip(id)
+  expect(f.turns).toHaveLength(0)
+  expect(s.state).toBe('running')
+  expect(s.current).toEqual({ round: 0, q: '0-1', followups: 0 })
+  expect(s.turns.slice(1)).toMatchObject([
+    { from: 'candidate', q: '0-0', text: '', skipped: true },
+    { from: 'interviewer', q: '0-1', text: 'Q 0-1' },
+  ])
+  await service.idle()
+})
+
+test('skip on the last question of a round opens the next round', async () => {
+  const f = fake()
+  const { service, id, store } = await started(f)
+  await store.update((file) => {
+    file.sessions[0].current = { round: 0, q: '0-4', followups: 1 }
+  })
+  const s = await service.skip(id)
+  expect(s.current).toEqual({ round: 1, q: '1-0', followups: 0 })
+  expect(s.turns.at(-1)).toMatchObject({ text: 'Hello from technical.\n\nQ 1-0' })
+})
+
+test('an empty or over-long answer is refused', async () => {
+  const f = fake()
+  const { service, id } = await started(f)
+  await expect(service.answer(id, '   ')).rejects.toMatchObject({ code: 'bad-state' })
+  await expect(service.answer(id, 'x'.repeat(8001))).rejects.toMatchObject({ code: 'bad-state' })
+  await expect(service.answer(id, 5 as never)).rejects.toMatchObject({ code: 'bad-state' })
+  await expect(service.answer('nope', 'hi')).rejects.toMatchObject({ code: 'not-found' })
+  expect(f.turns).toHaveLength(0)
+  expect((await service.get(id)).turns).toHaveLength(1)
+  await service.answer(id, 'x'.repeat(8000))
+  await service.idle()
+})
+
+test('answer and skip need a running interview', async () => {
+  const f = fake()
+  f.planResult = () => rawPlan(['hr'])
+  const { service, id } = await started(f)
+  await expect(service.answer(id, 'hi')).rejects.toMatchObject({ code: 'bad-state' })
+  await expect(service.skip(id)).rejects.toMatchObject({ code: 'bad-state' })
+})
+
+test('retry reruns a failed plan and a failed research', async () => {
+  const f = fake()
+  f.planResult = () => rawPlan(['hr'])
+  const { service, id } = await started(f)
+  expect((await service.get(id)).error).toBeTruthy()
+  f.planResult = () => rawPlan(['hr', 'technical'])
+  expect((await service.retry(id)).error).toBeUndefined()
+  await service.idle()
+  expect((await service.get(id)).state).toBe('running')
+
+  const g = fake()
+  g.researchResult = () => ({ items: [] })
+  const r = await started(g, { web: true })
+  expect((await r.service.get(r.id)).error).toBeTruthy()
+  g.researchResult = () => ({ items: [{ kind: 'company', text: 'Fact', url: 'https://acme.com' }] })
+  const again = await r.service.retry(r.id)
+  expect(again.state).toBe('researching')
+  await r.service.idle()
+  const s = await r.service.get(r.id)
+  expect(s.state).toBe('review')
+  expect(s.error).toBeUndefined()
+  expect(s.research).toHaveLength(1)
+})
+
+test('retry refuses a healthy session and a running job', async () => {
+  const f = fake()
+  const { service, id } = await started(f)
+  await expect(service.retry(id)).rejects.toMatchObject({ code: 'bad-state' })
+  await expect(service.retry('nope')).rejects.toMatchObject({ code: 'not-found' })
 })
