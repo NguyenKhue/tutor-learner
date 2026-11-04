@@ -273,6 +273,7 @@ export function buildReportPrompt(a: { setup: InterviewSetup; plan: PlannedRound
   const lines = [
     role(setup.level),
     ENGLISH,
+    DATA_NOTE,
     '',
     `Khue just finished a mock interview at the ${setup.level} level. Write the report. Judge each answer against the rubric of the question and the level bar below. Be honest and specific.`,
     '',
@@ -307,6 +308,7 @@ export function buildPracticePrompt(a: { question: PlannedQuestion; level: Level
   const lines = [
     role(a.level),
     ENGLISH,
+    DATA_NOTE,
     '',
     `Khue is practising one interview question again, at the ${a.level} level. Give feedback in the same format as an interview report entry for q "${a.question.q}".`,
     '',
