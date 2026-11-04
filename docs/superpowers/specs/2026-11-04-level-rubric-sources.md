@@ -59,11 +59,14 @@ Each level lists only what is new at that level. Senior assumes mid, and lead as
 | lead | gets other teams to agree | Dropbox IC5 (handles disagreement, breaks down silos) |
 | lead | risks and mitigations | ByteByteGo staff+ |
 | lead | grows other engineers | Dropbox IC5 (Talent: coaches, mentors, shares knowledge) |
+| mid | screens match the design, smooth animation, platform guidelines | Khue's review, 2026-11-04 (practitioner input, not a public source) |
+| senior | automated tests and CI/CD pipeline | Khue's review, 2026-11-04 (practitioner input, not a public source) |
+| lead | manages technical debt | Khue's review, 2026-11-04 (practitioner input, not a public source) |
 
 ## Limits
 
 - Lead is mapped to Dropbox IC5 (Staff) and ByteByteGo "Staff+". At a smaller company a lead may not be expected to set multi-team strategy, so the lead lines can over-ask. The line was softened to "beyond one feature or one team". Khue can drop it if it does not fit the interviews he expects.
 - The Android guide is not level-specific. Putting its content at mid, senior or lead is a judgement, backed only by the level wording of the other two sources.
-
-- Both sources are general, not Android-only. The rubric tests how an answer is reasoned, not which Android API is named.
+- The three sources are general, not Android-only. The rubric tests how an answer is reasoned, not which Android API is named.
 - ByteByteGo is a commercial guide, not a company rubric. Treat its level wording as well-known advice, not an official standard.
+- Three lines (UI fidelity at mid, tests and CI/CD at senior, technical debt at lead) come from Khue's own experience, not from a public source.

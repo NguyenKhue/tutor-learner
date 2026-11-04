@@ -7,6 +7,7 @@ export const LEVEL_RUBRIC: Record<'mid' | 'senior' | 'lead', string[]> = {
     'names the basic costs on a phone: network, battery and storage',
     'keeps screen state and data safe when the screen rotates or the app process is killed',
     'explains a past problem they solved and what they learned from it',
+    'builds screens that closely match the design, with smooth animations, and follows platform guidelines such as Material Design or Apple HIG',
   ],
   senior: [
     'finds the missing requirements without being prompted',
@@ -17,6 +18,7 @@ export const LEVEL_RUBRIC: Record<'mid' | 'senior' | 'lead', string[]> = {
     'spots technical risks early and says how to reduce them',
     'owns past mistakes and incidents, and says what changed afterwards',
     'shows how they raise the quality bar for the team, for example in reviews',
+    'sets up or improves automated tests and the build pipeline (CI/CD) so bugs are caught before production',
   ],
   lead: [
     'sets direction beyond one feature or one team, for example shared architecture or standards',
@@ -27,5 +29,6 @@ export const LEVEL_RUBRIC: Record<'mid' | 'senior' | 'lead', string[]> = {
     'shows how they would get other teams to agree and handle disagreement',
     'names the risks of the plan and the mitigation for each one',
     'explains how they grow other engineers and spread their knowledge',
+    'manages technical debt: balances shipping fast for the business against refactoring so the code stays easy to change',
   ],
 }
