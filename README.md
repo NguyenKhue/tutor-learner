@@ -37,6 +37,7 @@ Topics and points are created in the terminal with the Claude Code `tutor` skill
   first two steps. Multiple-choice answers are graded in code. Written answers are graded by Claude against criteria
   fixed when the question was made.
 - **Speaking:** every written answer has one box. Type in it, or press the mic and speak in English while a bar shows the 0:30–1:00 target (it stops by itself at 2:00). Whisper writes your words into the same box on this Mac, so you can listen back, fix a word and submit. Recordings stay in the app data folder for 30 days, are never added to the vault or the backups, and nothing is sent to a speech service. Claude only reads the text, so pronunciation is not graded.
+- **Mock interview:** paste a job post, pick a level and rounds, and Claude plays the interviewer (spoken aloud if you like). Answer by voice or text, then get a report with scores, three fixes, a sample answer per question, practice-again and a list of weak spots across interviews.
 - **English feedback:** for a written answer, you see your text, a corrected version and up to 3 short notes. It is kept
   apart from the score and can be turned off in Settings.
 - **Fair grading:** a failed written answer waits until you press "Continue" or "I think this is right"; "Next" appears after that. The second

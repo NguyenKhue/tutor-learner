@@ -83,3 +83,142 @@ test('nav has Interview', async () => {
   render(<App />)
   expect(await screen.findByRole('link', { name: 'Interview' })).toHaveAttribute('href', '/interview')
 })
+
+// ---- session, report, weak spots ----
+const synth = () => {
+  const s = { cancel: vi.fn(), speak: vi.fn(), getVoices: () => [] }
+  vi.stubGlobal('speechSynthesis', s)
+  vi.stubGlobal('SpeechSynthesisUtterance', class { text: string; constructor(t: string) { this.text = t } })
+  return s
+}
+
+const plan = [
+  { kind: 'technical' as const, persona: 'Sam', intro: 'Hi', competencies: [], questions: [
+    { q: '0-0', prompt: 'What is a coroutine?', type: 'scenario' as const, source: {}, rubric: { mid: [], senior: [], lead: [] }, probes: [] },
+    { q: '0-1', prompt: 'Explain Flow.', type: 'scenario' as const, source: {}, rubric: { mid: [], senior: [], lead: [] }, probes: [] },
+  ] },
+]
+const turn = (from: 'interviewer' | 'candidate', q: string, text: string, over = {}) => ({ round: 0, q, from, text, at: '2026-11-04', ...over })
+const scores = { reasoning: 4, depth: 3, structure: 4, english: 5, length: 3 }
+const report = {
+  levelMet: false, summary: 'Close, but shallow.',
+  questions: [{ q: '0-0', scores, missed: ['Dispatchers'], sample: 'A coroutine is…', englishNotes: ['Use "a" before coroutine'] }],
+  topFixes: [{ title: 'Go deeper', example: 'Name the dispatcher', action: 'Add one detail' }],
+  nextSteps: { notes: ['Kotlin/Coroutines.md'], topics: ['Coroutines and Flow'], drills: [], gaps: [{ topic: 'Flow', url: 'https://example.com/flow' }], focus: 'Flow' },
+  weakSpots: [],
+}
+const doneSession = (created = '2026-11-03T10:00:00Z', over: Partial<InterviewSession> = {}) => session('s1', created, 'Android dev', {
+  state: 'done', plan, report,
+  turns: [turn('interviewer', '0-0', 'What is a coroutine?'), turn('candidate', '0-0', 'A light thread', { voice: { audio: 'abc', seconds: 20 } })],
+  practice: [], ...over,
+})
+
+test('a running interview reads the question aloud and sends the answer', async () => {
+  const user = userEvent.setup()
+  const s = synth()
+  const running = session('s1', '2026-11-04T10:00:00Z', 'Android dev', {
+    plan, current: { round: 0, q: '0-1', followups: 0 },
+    turns: [turn('interviewer', '0-1', 'Good.\n\nExplain Flow.')],
+  })
+  const calls = mockApi({
+    'GET /api/overview': overview(),
+    'GET /api/interview': running,
+    'POST /api/interview/answer': running,
+  })
+  goTo('/interview/s1')
+  render(<App />)
+  expect(await screen.findByText('Technical · question 2 of 2')).toBeInTheDocument()
+  expect(screen.getByText('Good.')).toBeInTheDocument()
+  expect(screen.getByText('Explain Flow.')).toBeInTheDocument()
+  expect(s.speak).toHaveBeenCalledTimes(1)
+  expect((s.speak.mock.calls[0][0] as { text: string }).text).toBe('Good.\n\nExplain Flow.')
+  await user.click(screen.getByRole('button', { name: 'Play again' }))
+  expect(s.speak).toHaveBeenCalledTimes(2)
+  expect(screen.getByRole('button', { name: 'Send answer' })).toBeDisabled()
+  await user.type(screen.getByLabelText('Your answer'), 'Flow is cold')
+  await user.click(screen.getByRole('button', { name: 'Send answer' }))
+  const post = calls.find((c) => c.path === '/api/interview/answer')
+  expect(post?.body).toEqual({ id: 's1', text: 'Flow is cold' })
+})
+
+test('review lets you drop research items before starting', async () => {
+  const user = userEvent.setup()
+  const review = session('s1', '2026-11-04T10:00:00Z', 'x', {
+    state: 'review',
+    research: [
+      { kind: 'company', text: 'Acme builds apps', url: 'https://acme.test', kept: true },
+      { kind: 'process', text: 'Three rounds', url: 'https://acme.test/p', kept: true },
+    ],
+  })
+  const calls = mockApi({ 'GET /api/overview': overview(), 'GET /api/interview': review, 'POST /api/interview/research': { ...review, state: 'planning' } })
+  goTo('/interview/s1')
+  render(<App />)
+  await user.click(await screen.findByRole('checkbox', { name: /Three rounds/ }))
+  await user.click(screen.getByRole('button', { name: 'Start interview' }))
+  expect(calls.find((c) => c.path === '/api/interview/research')?.body).toEqual({ id: 's1', kept: [0] })
+})
+
+test('a failed step offers Try again', async () => {
+  const user = userEvent.setup()
+  const failed = session('s1', '2026-11-04T10:00:00Z', 'x', { state: 'planning', error: { code: 'failed', message: 'Could not plan' } })
+  const calls = mockApi({ 'GET /api/overview': overview(), 'GET /api/interview': failed, 'POST /api/interview/retry': { ...failed, error: undefined } })
+  goTo('/interview/s1')
+  render(<App />)
+  expect(await screen.findByText(/Could not plan/)).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Try again' }))
+  expect(calls.find((c) => c.path === '/api/interview/retry')?.body).toEqual({ id: 's1' })
+})
+
+test('the report shows scores, fixes and practice again', async () => {
+  const user = userEvent.setup()
+  const done = doneSession()
+  const practiced = { ...done, practice: [{ q: '0-0', answer: 'Better', at: '2026-11-04', result: { ...report.questions[0], scores: { ...scores, depth: 5 } } }] }
+  const calls = mockApi({ 'GET /api/overview': overview(), 'GET /api/interview': done, 'POST /api/interview/practice': practiced })
+  goTo('/interview/s1')
+  render(<App />)
+  expect(await screen.findByText('Close, but shallow.')).toBeInTheDocument()
+  expect(screen.getByText('Level not met yet')).toBeInTheDocument()
+  expect(screen.getByText('Go deeper')).toBeInTheDocument()
+  expect(screen.getByText('What is a coroutine?')).toBeInTheDocument()
+  expect(screen.getByText('Dispatchers')).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'Coroutines and Flow' })).toHaveAttribute('href', '/topics/Coroutines%20and%20Flow')
+  const gap = screen.getByRole('link', { name: 'Flow' })
+  expect(gap).toHaveAttribute('href', 'https://example.com/flow')
+  expect(gap).toHaveAttribute('rel', expect.stringContaining('noreferrer'))
+  await user.click(screen.getByRole('button', { name: 'Practice again' }))
+  await user.type(screen.getByLabelText('Your answer'), 'Better')
+  await user.click(screen.getByRole('button', { name: 'Send answer' }))
+  expect(calls.find((c) => c.path === '/api/interview/practice')?.body).toEqual({ id: 's1', q: '0-0', text: 'Better' })
+  expect(await screen.findByText('Your new answer')).toBeInTheDocument()
+})
+
+test('recordings older than 30 days show a note instead of a player', async () => {
+  mockApi({ 'GET /api/overview': overview(), 'GET /api/interview': doneSession('2020-01-01T10:00:00Z') })
+  goTo('/interview/s1')
+  const { container } = render(<App />)
+  expect(await screen.findByText('Recording removed after 30 days')).toBeInTheDocument()
+  expect(container.querySelector('audio')).toBeNull()
+})
+
+test('weak spots show improving and still there', async () => {
+  mockApi({
+    'GET /api/overview': overview(),
+    'GET /api/interview/weak-spots': [
+      { key: 'a', kind: 'content', label: 'Cache invalidation', sessions: 2, lastSeen: '2026-11-03', trend: 'still' },
+      { key: 'b', kind: 'english', label: 'Articles', sessions: 3, lastSeen: '2026-11-01', trend: 'improving' },
+    ],
+  })
+  goTo('/interview/weak-spots')
+  render(<App />)
+  expect(await screen.findByText('Cache invalidation')).toBeInTheDocument()
+  expect(screen.getByText('Still there')).toBeInTheDocument()
+  expect(screen.getByText('Improving')).toBeInTheDocument()
+  expect(screen.getByText(/seen in 3 interviews/)).toBeInTheDocument()
+})
+
+test('weak spots empty state', async () => {
+  mockApi({ 'GET /api/overview': overview(), 'GET /api/interview/weak-spots': [] })
+  goTo('/interview/weak-spots')
+  render(<App />)
+  expect(await screen.findByText('Do two interviews to see patterns.')).toBeInTheDocument()
+})

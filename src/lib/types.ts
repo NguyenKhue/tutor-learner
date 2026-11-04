@@ -67,3 +67,4 @@ export interface InterviewSession { id: string; created: string; setup: Intervie
   report?: InterviewReport; practice: Practice[]; error?: { code: 'limit' | 'auth' | 'failed'; message: string } }
 export interface InterviewsFile { version: 1; sessions: InterviewSession[] }
 export interface NoteExcerpt { path: string; title: string; text: string }
+export interface WeakSpotSummary { key: string; kind: WeakSpot['kind']; label: string; sessions: number; lastSeen: string; trend: 'still' | 'improving' }
