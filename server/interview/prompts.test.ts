@@ -41,7 +41,10 @@ test('turn prompt hides the rubric from the candidate and forbids teaching', () 
   ]
   const p = buildTurnPrompt({ round: validatePlan(plan(), setup())[1], question: q, turns, followups: 0, level: 'senior', lastRound: false, lastQuestion: false })
   expect(p).toContain('English')
-  expect(p).toContain('s')
+  expect(p).toContain('- s')
+  expect(p).not.toContain('- l')
+  expect(p).not.toContain('- m')
+  expect(p).toContain('<answer>my answer</answer>')
   expect(p).toContain('never reveal the rubric, never teach, never praise or criticise')
   expect(p).toContain('A word may be misheard')
   expect(p).toContain('my answer')
@@ -62,7 +65,8 @@ test('validatePlan numbers questions by round and position', () => {
 })
 
 test('validateTurn stops follow-ups after two', () => {
-  expect(validateTurn({ say: 'x', action: 'followup' }, 2).action).toBe('next')
+  expect(validateTurn({ say: 'x', action: 'followup' }, 2)).toEqual({ say: '', action: 'next' })
+  expect(validateTurn({ say: 'bye', action: 'end_round' }, 0)).toEqual({ say: 'bye', action: 'end_round' })
   expect(validateTurn({ say: 'x', action: 'followup' }, 1).action).toBe('followup')
   expect(() => validateTurn({ say: '', action: 'next' }, 0)).toThrow()
 })
@@ -102,4 +106,24 @@ test('report prompt reuses weak keys and speech note', () => {
   expect(p).toContain('reuse a key when the weakness is the same')
   expect(p).toContain('A word may be misheard')
   expect(p).toContain('English')
+})
+
+test('validatePlan rejects a missing source, a bad type and wrong round order', () => {
+  expect(() => validatePlan({ rounds: [round('hr', 5), round('technical', 5, { source: {} })] }, setup())).toThrow()
+  expect(() => validatePlan({ rounds: [round('hr', 5, { type: 'quiz' }), round('technical', 5)] }, setup())).toThrow()
+  expect(() => validatePlan({ rounds: [round('technical', 5), round('hr', 5)] }, setup())).toThrow()
+})
+
+test('plan prompt describes the 4-step design problem and fences the JD', () => {
+  const p = buildPlanPrompt({ setup: setup(), notes: [], research: [], avoid: [], reask: [] })
+  expect(p).toContain('ONE design problem asked in 4 ordered steps')
+  expect(p).toContain('situation-action-result')
+  expect(p).toContain('<job_description>')
+})
+
+test('validateReport drops gaps without a valid link', () => {
+  const p = validatePlan(plan(), setup())
+  const r = validateReport({ levelMet: false, summary: '', questions: [], topFixes: [], weakSpots: [],
+    nextSteps: { notes: [], topics: [], drills: [], focus: '', gaps: [{ topic: 'a', url: 'https://a.com' }, { topic: 'b', url: 'nope' }] } }, p)
+  expect(r.nextSteps.gaps).toEqual([{ topic: 'a', url: 'https://a.com' }])
 })

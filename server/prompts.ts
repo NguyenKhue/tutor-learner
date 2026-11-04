@@ -1,10 +1,10 @@
 import type { Point, Question } from '../src/lib/types'
 import { ClaudeError } from './claude'
 
-/** Everything one prompt needs: the point, its question, its scope and its source notes. */
 /** Told to the grader when an answer came from speech recognition. */
 export const SPEECH_NOTE = 'Khue spoke this answer and speech recognition wrote it down. A word may be misheard, so read an odd word as its likely sound-alike.'
 
+/** Everything one prompt needs: the point, its question, its scope and its source notes. */
 export interface PromptContext {
   point: Point
   title: string
