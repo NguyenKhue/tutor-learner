@@ -31,6 +31,8 @@ export interface ApiDeps {
   claude?: <T>(prompt: string, schema: object) => Promise<T>
   /** The Claude call that may search the web; used only by the interview research step. */
   claudeWeb?: <T>(prompt: string, schema: object) => Promise<T>
+  /** The Claude call with a long timeout and one retry; used only for the interview plan and report. */
+  claudeLong?: <T>(prompt: string, schema: object) => Promise<T>
   today?: () => string
   prefetch?: boolean
   python?: string
@@ -113,6 +115,13 @@ export function createApiMiddleware(
       claude = <T>(prompt: string, schema: object) =>
         runClaude<T>({ prompt, schema, bin: config.claudeBin, cwd: paths.dataDir })
     }
+    let claudeLong = deps.claudeLong
+    if (!claudeLong) {
+      fs.mkdirSync(paths.dataDir, { recursive: true })
+      // An injected `claude` (tests) stands in for the long call too.
+      claudeLong = deps.claude ?? (<T>(prompt: string, schema: object) =>
+        runClaude<T>({ prompt, schema, bin: config.claudeBin, cwd: paths.dataDir, timeoutMs: 240_000, delaysMs: [5000] }))
+    }
     let claudeWeb = deps.claudeWeb
     if (!claudeWeb) {
       fs.mkdirSync(paths.dataDir, { recursive: true })
@@ -140,6 +149,7 @@ export function createApiMiddleware(
       store: createInterviewStore(path.join(paths.dataDir, 'interviews.json')),
       readCatalog: async () => (await store.read()).reading.catalog,
       claude,
+      claudeLong,
       claudeWeb,
       today,
     })

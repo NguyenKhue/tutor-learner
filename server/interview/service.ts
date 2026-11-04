@@ -20,6 +20,8 @@ export interface InterviewDeps {
   store: ReturnType<typeof createInterviewStore>
   readCatalog: () => Promise<Record<string, CatalogEntry>>
   claude: <T>(prompt: string, schema: object) => Promise<T>
+  /** Like `claude`, with a longer timeout and fewer retries; used only for the plan and the report. */
+  claudeLong: <T>(prompt: string, schema: object) => Promise<T>
   claudeWeb: <T>(prompt: string, schema: object) => Promise<T>
   today: () => string
   newId?: () => string
@@ -56,7 +58,7 @@ const errorOf = (e: unknown): NonNullable<InterviewSession['error']> =>
 
 /** Mock interviews: creating, researching and planning sessions. Writes only interviews.json, never the vault. */
 export function createInterviewService(deps: InterviewDeps): InterviewService {
-  const { vault, store, readCatalog, claude, claudeWeb, today } = deps
+  const { vault, store, readCatalog, claude, claudeLong, claudeWeb, today } = deps
   const newId = deps.newId ?? (() => crypto.randomUUID())
   const running = new Map<string, symbol>()
   const jobs = new Set<Promise<void>>()
@@ -106,11 +108,13 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
       const s = file.sessions.find((x) => x.id === id)
       if (!s) return
       const catalog = await readCatalog()
+      const reask = reaskQueue(file.sessions, today(), s.setup.rounds)
+      const queued = new Set(reask.map((r) => r.prompt))
       const avoid = file.sessions
         .filter((x) => x.state === 'done')
         .flatMap((x) => (x.plan ?? []).flatMap((r) => r.questions.map((q) => q.prompt)))
+        .filter((p) => !queued.has(p))
         .slice(-AVOID_LIMIT)
-      const reask = reaskQueue(file.sessions, today(), s.setup.rounds)
       const prompt = buildPlanPrompt({
         setup: s.setup,
         notes: buildVaultContext(vault, catalog, s.setup.topics),
@@ -118,7 +122,7 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
         avoid,
         reask,
       })
-      const raw = await claude<unknown>(prompt, PLAN_SCHEMA)
+      const raw = await claudeLong<unknown>(prompt, PLAN_SCHEMA)
       const rounds = validatePlan(raw, s.setup, reask.map((r) => r.prompt))
       await patch(id, (x) => {
         release()
@@ -228,13 +232,13 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
       const prompt = buildTurnPrompt({
         round,
         question: round.questions[idx],
-        turns: s.turns,
+        turns: s.turns.filter((t) => t.round === cur.round),
         followups: cur.followups,
         level: s.setup.level,
         lastRound: cur.round === plan.length - 1,
         lastQuestion: idx === round.questions.length - 1,
       })
-      const result = validateTurn(await claude<unknown>(prompt, TURN_SCHEMA), cur.followups)
+      const result = validateTurn(await claude<unknown>(prompt, TURN_SCHEMA), cur.followups, idx === round.questions.length - 1)
       await patch(id, (x) => {
         release()
         if (result.action === 'followup') {
@@ -267,8 +271,10 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
       const s = file.sessions.find((x) => x.id === id)
       if (!s) return
       const plan = answeredPlan(s)
-      const prompt = buildReportPrompt({ setup: s.setup, plan, turns: s.turns, knownWeakKeys: knownWeakKeys(file.sessions.filter((x) => x.id !== id)) })
-      const result = validateReport(await claude<unknown>(prompt, REPORT_SCHEMA), plan)
+      const research = s.research ?? []
+      const prompt = buildReportPrompt({ setup: s.setup, plan, turns: s.turns, knownWeakKeys: knownWeakKeys(file.sessions.filter((x) => x.id !== id)), research })
+      const catalog = await readCatalog()
+      const result = validateReport(await claudeLong<unknown>(prompt, REPORT_SCHEMA), plan, { topics: s.setup.topics, catalog, research })
       await patch(id, (x) => {
         release()
         x.report = result
@@ -318,7 +324,9 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
   return {
     async list() {
       const f = await store.read()
-      return [...f.sessions].reverse().map(shown).sort((a, b) => (a.created < b.created ? 1 : a.created > b.created ? -1 : 0))
+      // Older sessions store a UTC timestamp, newer ones a local date: compare the day only.
+      const day = (s: InterviewSession) => s.created.slice(0, 10)
+      return [...f.sessions].reverse().map(shown).sort((a, b) => (day(a) < day(b) ? 1 : day(a) > day(b) ? -1 : 0))
     },
     async get(id) {
       return shown(await find(id))
@@ -327,7 +335,7 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
       const setup = cleanSetup(input)
       const session: InterviewSession = {
         id: newId(),
-        created: new Date().toISOString(),
+        created: today(),
         setup,
         turns: [],
         state: setup.web ? 'researching' : 'planning',

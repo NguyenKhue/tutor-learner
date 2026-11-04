@@ -49,6 +49,7 @@ interface Fake {
   turns: Array<{ prompt: string }>
   reports: Array<{ prompt: string }>
   practices: Array<{ prompt: string }>
+  long: object[]
   reportResult: () => unknown
   practiceResult: () => unknown
   turnResult: () => unknown
@@ -65,6 +66,7 @@ function fake(): Fake {
     turns: [],
     reports: [],
     practices: [],
+    long: [],
     reportResult: () => ({
       levelMet: true,
       summary: 'Good.',
@@ -119,6 +121,10 @@ function make(f: Fake, file?: string) {
     store,
     readCatalog: async () => catalog,
     claude: (p, s) => f.claude(p, s),
+    claudeLong: (p, s) => {
+      f.long.push(s)
+      return f.claude(p, s)
+    },
     claudeWeb: (p, s) => f.claudeWeb(p, s),
     today: () => '2026-11-04',
     newId: () => `s${++n}`,
@@ -752,4 +758,115 @@ test('a second practice while grading is busy', async () => {
 test('weakSpots summarizes stored sessions', async () => {
   const { service } = make(fake())
   expect(await service.weakSpots()).toEqual([])
+})
+
+// ---- final review fixes ----
+test('plan and report go through claudeLong; turns, practice and research do not', async () => {
+  const f = fake()
+  const { service, id } = await answeredOne(f)
+  await service.finish(id)
+  await service.idle()
+  await service.practice(id, '0-0', 'again')
+  await service.idle()
+  // plan (1) and report (1) only
+  expect(f.long).toEqual([PLAN_SCHEMA, REPORT_SCHEMA])
+  expect(f.turns).toHaveLength(1)
+  expect(f.practices).toHaveLength(1)
+  const g = fake()
+  const w = await started(g, { web: true })
+  await w.service.keepResearch(w.id, [0])
+  await w.service.idle()
+  expect(g.long).toEqual([PLAN_SCHEMA])
+  expect(g.researches).toHaveLength(1)
+})
+
+test('the report only links to notes, topics and gaps it was given', async () => {
+  const f = fake()
+  f.researchResult = () => ({ items: [{ kind: 'knowledge', text: 'Gap fact', url: 'https://gap.test/a' }, { kind: 'company', text: 'Dropped', url: 'https://gap.test/dropped' }] })
+  f.reportResult = () => ({
+    levelMet: true, summary: 's',
+    questions: [{ q: '0-0', scores: { reasoning: 2, depth: 3, structure: 3, english: 3, length: 3 }, missed: [], sample: 's', englishNotes: [] }],
+    topFixes: [],
+    nextSteps: {
+      notes: ['A/n.md', 'made/up.md'], topics: ['Coroutines', 'Invented'], drills: ['d'], focus: 'f',
+      gaps: [{ topic: 'g1', url: 'https://gap.test/a' }, { topic: 'g2', url: 'https://gap.test/dropped' }, { topic: 'g3', url: 'https://x.test' }, { topic: 'g4', url: 'https://example.com/x' }],
+    },
+    weakSpots: [],
+  })
+  const m = make(f)
+  const created = await m.service.create(setup({ web: true, topics: ['Coroutines'] }))
+  await m.service.idle()
+  await m.service.keepResearch(created.id, [0])
+  await m.service.idle()
+  await m.service.answer(created.id, 'ans')
+  await m.service.idle()
+  await m.service.finish(created.id)
+  await m.service.idle()
+  const s = await m.service.get(created.id)
+  expect(f.reports[0].prompt).toContain('https://gap.test/a')
+  expect(f.reports[0].prompt).not.toContain('https://gap.test/dropped')
+  expect(f.reports[0].prompt).toContain('Coroutines')
+  expect(s.report?.nextSteps.notes).toEqual(['A/n.md'])
+  expect(s.report?.nextSteps.topics).toEqual(['Coroutines'])
+  // kept research link and a question source link survive; the rest do not
+  expect(s.report?.nextSteps.gaps.map((g) => g.topic)).toEqual(['g1', 'g4'])
+})
+
+test('the turn prompt carries only the current round', async () => {
+  const f = fake()
+  const { service, id, store } = await started(f)
+  await store.update((file) => {
+    const s = file.sessions[0]
+    s.turns.push({ round: 0, q: '0-4', from: 'candidate', text: 'OLD ROUND ANSWER', at: 'x' })
+    s.current = { round: 1, q: '1-0', followups: 0 }
+    s.turns.push({ round: 1, q: '1-0', from: 'interviewer', text: 'Hello from technical.', at: 'x' })
+  })
+  await service.answer(id, 'new round answer')
+  await service.idle()
+  expect(f.turns[0].prompt).toContain('new round answer')
+  expect(f.turns[0].prompt).not.toContain('OLD ROUND ANSWER')
+})
+
+test('end_round before the last question of a round moves to the next question', async () => {
+  const f = fake()
+  f.turnResult = () => ({ say: 'Thanks.', action: 'end_round' })
+  const { service, id } = await started(f)
+  await service.answer(id, 'one')
+  await service.idle()
+  const s = await service.get(id)
+  expect(s.current).toEqual({ round: 0, q: '0-1', followups: 0 })
+})
+
+test('avoid leaves out prompts that are in the re-ask list', async () => {
+  const spy = vi.spyOn(history, 'reaskQueue').mockReturnValue([{ round: 'hr', prompt: 'Q 0-0' }])
+  try {
+    const f = fake()
+    const { service, store } = make(f)
+    const first = await service.create(setup())
+    await service.idle()
+    await store.update((file) => {
+      file.sessions.find((x) => x.id === first.id)!.state = 'done'
+    })
+    await service.create(setup())
+    await service.idle()
+    expect(f.plans[1].prompt).toContain('Questions Khue wants to be asked again')
+    const avoidPart = f.plans[1].prompt.split('do not repeat them)')[1].split('## Questions Khue wants')[0]
+    expect(avoidPart).toContain('- Q 0-1')
+    expect(avoidPart).not.toContain('- Q 0-0\n')
+  } finally {
+    spy.mockRestore()
+  }
+})
+
+test('created is the local date from today(), and the list sorts old ISO dates with new plain ones', async () => {
+  const f = fake()
+  const { service, store } = make(f)
+  const a = await service.create(setup())
+  expect(a.created).toBe('2026-11-04')
+  await service.idle()
+  await store.update((file) => {
+    file.sessions.push({ id: 'iso', created: '2026-11-04T01:00:00.000Z', setup: setup(), turns: [], state: 'done', practice: [] })
+  })
+  // same day: the later-created one (plain date, stored first) is not pushed below the older ISO one
+  expect((await service.list()).map((x) => x.id)).toEqual(['iso', 's1'])
 })
