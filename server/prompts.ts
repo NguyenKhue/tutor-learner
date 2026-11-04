@@ -2,6 +2,9 @@ import type { Point, Question } from '../src/lib/types'
 import { ClaudeError } from './claude'
 
 /** Everything one prompt needs: the point, its question, its scope and its source notes. */
+/** Told to the grader when an answer came from speech recognition. */
+export const SPEECH_NOTE = 'Khue spoke this answer and speech recognition wrote it down. A word may be misheard, so read an odd word as its likely sound-alike.'
+
 export interface PromptContext {
   point: Point
   title: string
@@ -172,7 +175,7 @@ export function buildGradePrompt(
 
   lines.push("Khue's answer:", '<answer>', a.answer, '</answer>', '')
   if (a.spoken) {
-    lines.push('Khue spoke this answer and speech recognition wrote it down. A word may be misheard, so read an odd word as its likely sound-alike.', '')
+    lines.push(SPEECH_NOTE, '')
   }
 
   lines.push(
