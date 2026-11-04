@@ -94,31 +94,48 @@ export function InterviewPage() {
   if (session.state === 'review') {
     const items = session.research ?? []
     const keptIndexes = items.map((_, i) => i).filter((i) => !dropped.includes(i))
+    const groups: [string, number[]][] = [
+      ['About the company', items.map((it, i) => (it.kind === 'knowledge' ? -1 : i)).filter((i) => i >= 0)],
+      ['Not in your notes yet', items.map((it, i) => (it.kind === 'knowledge' ? i : -1)).filter((i) => i >= 0)],
+    ]
     return (
-      <>
+      <div className="review">
         <header className="page-head">
-          <h1>Check the research</h1>
-          <p>Untick anything that looks wrong. The interviewer will use the rest.</p>
+          <h1>What the web found</h1>
+          <p>The interviewers will use what you keep. Untick anything that looks wrong or out of date.</p>
         </header>
         {session.error && <p className="hint" role="alert">{session.error.message}</p>}
         {items.length === 0 && !session.error && <p className="hint">Nothing was found. You can still start.</p>}
-        <ul className="research-list">
-          {items.map((it, i) => (
-            <li key={i}>
-              <label className="check-row">
-                <input type="checkbox" checked={!dropped.includes(i)} onChange={() => setDropped(dropped.includes(i) ? dropped.filter((x) => x !== i) : [...dropped, i])} />
-                <span>{it.text}</span>
-              </label>
-              {it.url && <a className="hint" href={it.url} target="_blank" rel="noreferrer">{it.url}</a>}
-            </li>
-          ))}
-        </ul>
+        {groups.filter(([, idx]) => idx.length > 0).map(([title, idx]) => (
+          <section key={title} className="research-group" aria-label={title}>
+            <h2 className="section-title">{title}</h2>
+            <ul className="research-list">
+              {idx.map((i) => {
+                const it = items[i]
+                const off = dropped.includes(i)
+                return (
+                  <li key={i}>
+                    <label className={off ? 'research-card off' : 'research-card'}>
+                      <input type="checkbox" checked={!off} onChange={() => setDropped(off ? dropped.filter((x) => x !== i) : [...dropped, i])} />
+                      <span className="research-body">
+                        <span className="research-text">{it.text}</span>
+                        {off && <span className="research-note">Unticked. The interviewers won’t use this.</span>}
+                      </span>
+                    </label>
+                    {it.url && <a className="research-link" href={it.url} target="_blank" rel="noreferrer">{it.url.replace(/^https?:\/\//, '')}</a>}
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
+        ))}
         {alert}
-        <div className="row">
-          <button type="button" className="btn primary wide" disabled={busy} onClick={() => void post('research', { kept: keptIndexes })}>Start interview</button>
+        <div className="review-actions">
+          <button type="button" className="btn primary wide" disabled={busy} onClick={() => void post('research', { kept: keptIndexes })}>Start the interview</button>
+          {items.length > 0 && <span className="hint">{keptIndexes.length} of {items.length} kept</span>}
           {items.length === 0 && <button type="button" className="btn" disabled={busy} onClick={() => void post('retry')}>Search again</button>}
         </div>
-      </>
+      </div>
     )
   }
 

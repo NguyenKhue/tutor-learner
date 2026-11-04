@@ -46,7 +46,7 @@ test('the list shows past interviews newest first and links to a new one', async
   expect(within(rows[1]).getByText('No job description')).toBeInTheDocument()
   expect(within(rows[1]).getByText('Level met')).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'New mock interview' })).toHaveAttribute('href', '/interview/new')
-  expect(screen.getByRole('link', { name: 'Weak spots' })).toHaveAttribute('href', '/interview/weak-spots')
+  expect(screen.getByRole('link', { name: 'See all weak spots' })).toHaveAttribute('href', '/interview/weak-spots')
 })
 
 test('setup sends the chosen level, rounds, topics and toggles', async () => {
@@ -67,11 +67,11 @@ test('setup sends the chosen level, rounds, topics and toggles', async () => {
   expect(screen.getByRole('button', { name: 'Kotlin Language' })).toHaveAttribute('aria-pressed', 'true')
   expect(screen.getByRole('button', { name: 'Coroutines and Flow' })).toHaveAttribute('aria-pressed', 'false')
   await user.click(screen.getByRole('button', { name: 'Coroutines and Flow' }))
-  await user.click(screen.getByRole('button', { name: 'Lead' }))
+  await user.click(screen.getByRole('radio', { name: 'Lead' }))
   await user.click(screen.getByRole('checkbox', { name: 'Behavioral / Lead' }))
   await user.click(screen.getByRole('checkbox', { name: 'Search the web' }))
   await user.click(screen.getByRole('checkbox', { name: 'Read questions aloud' }))
-  await user.click(screen.getByRole('button', { name: 'Prepare interview' }))
+  await user.click(screen.getByRole('button', { name: 'Prepare my interview' }))
   const post = calls.find((c) => c.method === 'POST')
   expect(post?.path).toBe('/api/interview')
   expect(post?.body).toEqual({
@@ -130,7 +130,7 @@ test('a running interview reads the question aloud and sends the answer', async 
   })
   goTo('/interview/s1')
   render(<App />)
-  expect(await screen.findByText('Technical · question 2 of 2')).toBeInTheDocument()
+  expect(await screen.findByText('Question 2 of 2')).toBeInTheDocument()
   expect(screen.getByText('Good.')).toBeInTheDocument()
   expect(screen.getByText('Explain Flow.')).toBeInTheDocument()
   expect(s.speak).toHaveBeenCalledTimes(1)
@@ -157,7 +157,7 @@ test('review lets you drop research items before starting', async () => {
   goTo('/interview/s1')
   render(<App />)
   await user.click(await screen.findByRole('checkbox', { name: /Three rounds/ }))
-  await user.click(screen.getByRole('button', { name: 'Start interview' }))
+  await user.click(screen.getByRole('button', { name: 'Start the interview' }))
   expect(calls.find((c) => c.path === '/api/interview/research')?.body).toEqual({ id: 's1', kept: [0] })
 })
 
@@ -216,7 +216,7 @@ test('weak spots show improving and still there', async () => {
   expect(await screen.findByText('Cache invalidation')).toBeInTheDocument()
   expect(screen.getByText('Still there')).toBeInTheDocument()
   expect(screen.getByText('Improving')).toBeInTheDocument()
-  expect(screen.getByText(/seen in 3 interviews/)).toBeInTheDocument()
+  expect(screen.getByText(/Seen in 3 interviews/)).toBeInTheDocument()
 })
 
 test('weak spots empty state', async () => {
@@ -337,7 +337,7 @@ test('Finish calls finish when answers exist, else Leave interview shows', async
   const calls = mockApi({ 'GET /api/overview': overview(), 'GET /api/interview': done, 'POST /api/interview/finish': { ...done, state: 'reporting' } })
   goTo('/interview/s1')
   render(<App />)
-  await user.click(await screen.findByRole('button', { name: 'Finish' }))
+  await user.click(await screen.findByRole('button', { name: 'Get my report' }))
   expect(calls.find((c) => c.path === '/api/interview/finish')?.body).toEqual({ id: 's1' })
 })
 
@@ -350,7 +350,7 @@ test('with every question skipped, Leave interview replaces Finish', async () =>
   goTo('/interview/s1')
   render(<App />)
   expect(await screen.findByRole('button', { name: 'Leave interview' })).toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: 'Finish' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Get my report' })).toBeNull()
 })
 
 // ---- final review fixes ----
@@ -370,7 +370,7 @@ test('review with a failed search still lets you start, and offers Search again'
   render(<App />)
   expect(await screen.findByText(/No research found/)).toBeInTheDocument()
   expect(screen.queryByText('Something went wrong')).toBeNull()
-  await user.click(screen.getByRole('button', { name: 'Start interview' }))
+  await user.click(screen.getByRole('button', { name: 'Start the interview' }))
   expect(calls.find((c) => c.path === '/api/interview/research')?.body).toEqual({ id: 's1', kept: [] })
 })
 
@@ -395,7 +395,7 @@ test('scores are out of 4', async () => {
   const { container } = render(<App />)
   await screen.findByText('Close, but shallow.')
   expect(container.textContent).not.toContain('/5')
-  expect(screen.getAllByText('4/4').length).toBeGreaterThan(0)
+  expect(screen.getAllByLabelText('4 of 4').length).toBeGreaterThan(0)
 })
 
 test('Hide text stays on across questions and is remembered', async () => {
@@ -415,7 +415,7 @@ test('Hide text stays on across questions and is remembered', async () => {
   expect(screen.queryByText('What is a coroutine?')).toBeNull()
   await user.type(screen.getByLabelText('Your answer'), 'a')
   await user.click(screen.getByRole('button', { name: 'Send answer' }))
-  expect(await screen.findByText('Technical · question 2 of 2')).toBeInTheDocument()
+  expect(await screen.findByText('Question 2 of 2')).toBeInTheDocument()
   expect(screen.getByRole('checkbox', { name: 'Hide text until I answer' })).toBeChecked()
   expect(screen.queryByText('Explain Flow.')).toBeNull()
   expect(localStorage.getItem(KEY)).toBe('1')
@@ -453,7 +453,7 @@ test('an ended interview with no closing line shows a short closing line, not th
   render(<App />)
   expect(await screen.findByText("That's the end of the interview.")).toBeInTheDocument()
   expect(screen.queryByText('Explain Flow.')).toBeNull()
-  expect(screen.getByRole('button', { name: 'Finish' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Get my report' })).toBeInTheDocument()
 })
 
 test('an ended interview with a closing line shows that line', async () => {

@@ -11,6 +11,18 @@ export function speechAvailable(): boolean {
   return typeof speechSynthesis !== 'undefined' && !!speechSynthesis && typeof SpeechSynthesisUtterance !== 'undefined'
 }
 
+type SpeakingListener = (speaking: boolean) => void
+const listeners = new Set<SpeakingListener>()
+const tell = (speaking: boolean) => listeners.forEach((l) => l(speaking))
+
+/** Calls `listener` whenever speech starts or stops; returns the unsubscribe function. */
+export function onSpeaking(listener: SpeakingListener): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
 const VOICE_WAIT_MS = 800
 let waitedForVoices = false
 let latest = 0
@@ -37,6 +49,7 @@ export function speak(text: string): void {
   if (!speechAvailable()) return
   const mine = ++latest
   speechSynthesis.cancel()
+  tell(false)
   whenVoices(() => {
     if (mine !== latest) return // a newer speak or a stop came in while waiting
     const utterance = new SpeechSynthesisUtterance(text)
@@ -47,6 +60,9 @@ export function speak(text: string): void {
     } else {
       utterance.lang = 'en-US'
     }
+    utterance.onstart = () => tell(true)
+    utterance.onend = () => tell(false)
+    utterance.onerror = () => tell(false)
     speechSynthesis.speak(utterance)
   })
 }
@@ -55,4 +71,5 @@ export function speak(text: string): void {
 export function stopSpeaking(): void {
   latest++
   if (typeof speechSynthesis !== 'undefined' && speechSynthesis) speechSynthesis.cancel()
+  tell(false)
 }

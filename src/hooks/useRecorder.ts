@@ -24,7 +24,9 @@ export function useRecorder(maxSeconds: number, onDone: (recording: Recording) =
   const [recording, setRecording] = useState(false)
   const [seconds, setSeconds] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [stream, setStream] = useState<MediaStream | null>(null)
   const recorder = useRef<MediaRecorder | null>(null)
+  const dropped = useRef(false)
   const timer = useRef<number | null>(null)
   const done = useRef(onDone)
   done.current = onDone
@@ -33,11 +35,18 @@ export function useRecorder(maxSeconds: number, onDone: (recording: Recording) =
     if (recorder.current?.state === 'recording') recorder.current.stop()
   }, [])
 
+  /** Stops without handing the recording on: nothing is kept. */
+  const cancel = useCallback(() => {
+    dropped.current = true
+    stop()
+  }, [stop])
+
   /** Clears the timer and frees the microphone. */
   const release = useCallback(() => {
     if (timer.current !== null) window.clearInterval(timer.current)
     timer.current = null
     recorder.current?.stream.getTracks().forEach((t) => t.stop())
+    setStream(null)
   }, [])
 
   const start = useCallback(async () => {
@@ -60,9 +69,12 @@ export function useRecorder(maxSeconds: number, onDone: (recording: Recording) =
       release()
       recorder.current = null
       setRecording(false)
+      if (dropped.current) return
       done.current({ blob: new Blob(chunks, { type: rec.mimeType }), seconds: Math.min(elapsed(), maxSeconds) })
     }
     recorder.current = rec
+    dropped.current = false
+    setStream(stream)
     rec.start()
     setSeconds(0)
     setRecording(true)
@@ -85,5 +97,5 @@ export function useRecorder(maxSeconds: number, onDone: (recording: Recording) =
     [release],
   )
 
-  return { recording, seconds, error, start, stop }
+  return { recording, seconds, error, stream, start, stop, cancel }
 }

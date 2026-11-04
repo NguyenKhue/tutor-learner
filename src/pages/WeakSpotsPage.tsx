@@ -26,14 +26,18 @@ export function WeakSpotsPage() {
       {!spots && !failed && <Skeleton />}
       {spots && spots.length === 0 && <p className="hint">Do two interviews to see patterns.</p>}
       {spots && spots.length > 0 && (
-        <ul className="topic-list">
+        <ul className="spot-list">
           {spots.map((s) => (
-            <li key={s.key} className="topic-row">
+            <li key={s.key} className="spot-card">
               <div className="row spread">
-                <span className="topic-name">{s.label}</span>
+                <span className="spot-label">{s.label}</span>
                 <span className={`trend ${s.trend}`}>{s.trend === 'improving' ? 'Improving' : 'Still there'}</span>
               </div>
-              <span className="hint">{KIND_LABEL[s.kind]} · seen in {s.sessions} interviews · last seen {s.lastSeen.slice(0, 10)}</span>
+              <span className="interview-row-meta">
+                <span>{KIND_LABEL[s.kind]}</span>
+                <span>Seen in {s.sessions} interviews</span>
+                <span>Last seen {s.lastSeen.slice(0, 10)}</span>
+              </span>
             </li>
           ))}
         </ul>

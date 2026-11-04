@@ -1,5 +1,8 @@
 import type { Point, RoundKind } from './types'
 
+/** How many questions each round asks (a system design round is one problem in 4 steps). */
+export const ROUND_SIZE: Record<RoundKind, number> = { hr: 5, technical: 5, system_design: 4, behavioral: 4 }
+
 export const ROUND_LABEL: Record<RoundKind, string> = {
   hr: 'HR',
   technical: 'Technical',

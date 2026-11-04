@@ -50,7 +50,9 @@ export type RoundKind = 'hr' | 'technical' | 'system_design' | 'behavioral'
 export interface InterviewSetup { source: string; level: Level; rounds: RoundKind[]; topics: string[]; web: boolean; readAloud: boolean }
 export interface ResearchItem { kind: 'company' | 'process' | 'knowledge'; text: string; url: string; kept: boolean }
 export interface PlannedQuestion { q: string; prompt: string; type: 'scenario' | 'tradeoff' | 'design' | 'behavioral' | 'hr'
-  source: { vault?: string; url?: string }; rubric: Record<Level, string[]>; probes: string[]; reask?: string }
+  source: { vault?: string; url?: string }; rubric: Record<Level, string[]>; probes: string[]; reask?: string
+  /** the green zone for a spoken answer, in seconds; the round's default when missing */
+  seconds?: [number, number] }
 export interface PlannedRound { kind: RoundKind; persona: string; intro: string; competencies: string[]; questions: PlannedQuestion[] }
 export interface Turn { round: number; q: string; from: 'interviewer' | 'candidate'; text: string; voice?: Voice; skipped?: boolean; at: string }
 export interface Scores { reasoning: number; depth: number; structure: number; english: number; length: number }

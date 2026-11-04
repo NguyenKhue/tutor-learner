@@ -1,10 +1,13 @@
 import type {
   CatalogEntry, InterviewReport, InterviewSetup, Level, NoteExcerpt, PlannedQuestion, PlannedRound, QuestionReport, ResearchItem, RoundKind, Scores, Turn,
 } from '../../src/lib/types'
+import { ROUND_TARGET, targetFor, validTarget } from '../../src/lib/answerTime'
 import { SPEECH_NOTE } from '../prompts'
 import { LEVEL_RUBRIC } from './rubric'
 
-export const ROUND_SIZE: Record<RoundKind, number> = { hr: 5, technical: 5, system_design: 4, behavioral: 4 }
+import { ROUND_SIZE } from '../../src/lib/interview'
+
+export { ROUND_SIZE }
 export const MAX_FOLLOWUPS = 2
 
 const LEVELS: Level[] = ['mid', 'senior', 'lead']
@@ -46,6 +49,7 @@ const PLANNED_QUESTION = {
     rubric: { type: 'object', properties: { mid: STRS, senior: STRS, lead: STRS }, required: ['mid', 'senior', 'lead'] },
     probes: STRS,
     reask: STR,
+    seconds: { type: 'array', items: { type: 'integer' } },
   },
   required: ['prompt', 'type', 'source', 'rubric', 'probes'],
 }
@@ -134,7 +138,7 @@ function rubricUpTo(level: Level): string[] {
 
 const SCORING = [
   '## Scores (each 1-4)',
-  '- reasoning: did they think through the problem and the trade-offs? depth: did they go one layer deeper when pushed? structure: was the answer organised? english: grammar and word choice for an interview. length: was it long enough, not too long?',
+  '- reasoning: did they think through the problem and the trade-offs? depth: did they go one layer deeper when pushed? structure: was the answer organised? english: grammar and word choice for an interview. length: for a spoken answer, compare its seconds with the question\'s target length (inside = 3 or 4, a little outside = 2, far outside = 1); for a typed answer, judge whether it says enough for that target.',
   '- 1 = weak, 2 = below the level, 3 = meets the level, 4 = clearly above the level.',
 ]
 
@@ -193,6 +197,7 @@ export function buildPlanPrompt(a: {
     '- source: every question records where it comes from: { "vault": "<note path>" } for a note below, or { "url": "<link>" } for a research item. Base the rubric on that source.',
     '- rubric: for each level (mid, senior, lead) 2-4 short lines: what a good answer at that level contains. Use the level rubric below as the bar.',
     '- probes: 2-3 follow-up questions the interviewer can ask when the answer is thin.',
+    `- seconds: [from, to], how long a good spoken answer to this question lasts. Defaults: ${Object.entries(ROUND_TARGET).map(([k, [a, b]]) => `${k} ${a}-${b}`).join(', ')}. Use the default unless the question clearly needs a shorter or longer answer.`,
     `- ${NO_INVENT}`,
     '',
     `## Level rubric (${setup.level}${setup.level === 'mid' ? '' : ', plus the levels below it'})`,
@@ -301,7 +306,8 @@ export function buildReportPrompt(a: { setup: InterviewSetup; plan: PlannedRound
     lines.push('', `## Round: ${r.kind}`)
     for (const q of r.questions) {
       const src = [q.source.vault ? `vault note ${q.source.vault}` : '', q.source.url ?? ''].filter(Boolean).join(', ')
-      lines.push('', `### ${q.q}: ${q.prompt}`, `Source: ${src || '(none)'}`, 'Rubric:', ...q.rubric[setup.level].map((l) => `- ${l}`))
+      const [from, to] = targetFor(r.kind, q)
+      lines.push('', `### ${q.q}: ${q.prompt}`, `Source: ${src || '(none)'}`, `Target length: ${from}-${to} s`, 'Rubric:', ...q.rubric[setup.level].map((l) => `- ${l}`))
       lines.push('Conversation:', ...transcript(a.turns.filter((t) => t.q === q.q)))
     }
   })
@@ -310,7 +316,8 @@ export function buildReportPrompt(a: { setup: InterviewSetup; plan: PlannedRound
 }
 
 /** Asks for feedback on one answer Khue retried outside the interview. */
-export function buildPracticePrompt(a: { question: PlannedQuestion; level: Level; answer: string; spoken: boolean }): string {
+export function buildPracticePrompt(a: { question: PlannedQuestion; round?: RoundKind; level: Level; answer: string; spoken: boolean; seconds?: number }): string {
+  const [from, to] = targetFor(a.round, a.question)
   const lines = [
     role(a.level),
     ENGLISH,
@@ -322,6 +329,7 @@ export function buildPracticePrompt(a: { question: PlannedQuestion; level: Level
     '- missed: what a strong answer had that Khue did not say. sample: a model answer, 4-8 short sentences. englishNotes: at most 3 short notes about grammar or wording.',
     '',
     `## Question: ${a.question.prompt}`,
+    `Target length: ${from}-${to} s${a.seconds ? `. Khue spoke for ${Math.round(a.seconds)} s.` : ''}`,
     '## Rubric',
     ...a.question.rubric[a.level].map((l) => `- ${l}`),
     '',
@@ -368,6 +376,7 @@ export function validatePlan(raw: unknown, setup: InterviewSetup, reaskPrompts: 
         rubric: { mid: strs(rub.mid), senior: strs(rub.senior), lead: strs(rub.lead) },
         probes: strs(q.probes),
         ...(reask ? { reask } : {}),
+        ...(validTarget(q.seconds) ? { seconds: validTarget(q.seconds) } : {}),
       }
     })
     return {

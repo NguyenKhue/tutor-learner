@@ -295,9 +295,10 @@ export function createInterviewService(deps: InterviewDeps): InterviewService {
       const s = (await store.read()).sessions.find((x) => x.id === id)
       const entry = s?.practice[index]
       if (!s || !entry) return
-      const question = s.plan?.flatMap((r) => r.questions).find((q) => q.q === entry.q)
-      if (!question) throw new Error('The question is not in this interview.')
-      const prompt = buildPracticePrompt({ question, level: s.setup.level, answer: entry.answer, spoken: Boolean(entry.voice) })
+      const round = s.plan?.find((r) => r.questions.some((q) => q.q === entry.q))
+      const question = round?.questions.find((q) => q.q === entry.q)
+      if (!round || !question) throw new Error('The question is not in this interview.')
+      const prompt = buildPracticePrompt({ question, round: round.kind, level: s.setup.level, answer: entry.answer, spoken: Boolean(entry.voice), seconds: entry.voice?.seconds })
       const raw = await claude<unknown>(prompt, PRACTICE_SCHEMA)
       if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error('feedback is not an object')
       const result = cleanQuestionReport({ ...(raw as Record<string, unknown>), q: entry.q })
