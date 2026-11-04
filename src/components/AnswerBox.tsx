@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { canRecord, useRecorder, type Recording } from '../hooks/useRecorder'
+import { stopSpeaking } from '../lib/speak'
 import { GOOD_FROM, GOOD_TO, MAX_SECONDS, clock, lengthNote, timeHint } from '../lib/speakingTime'
 import type { Voice } from '../lib/types'
 import { Working } from './Loading'
@@ -86,6 +87,7 @@ export function AnswerBox({ value, onChange, onSubmit, ariaLabel = 'Your answer'
   useEffect(() => onBusy?.(busy), [busy, onBusy])
 
   const start = () => {
+    stopSpeaking() // the microphone must not hear the interviewer
     setFailure(null)
     setUnwritten(null)
     void recorder.start()
