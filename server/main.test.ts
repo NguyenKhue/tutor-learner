@@ -126,3 +126,18 @@ test('serves the app for note paths that end in .md', async () => {
   expect((await request(s.url, '/assets/missing.js')).status).toBe(404)
   expect((await request(s.url, '/assets/missing.png')).status).toBe(404)
 })
+
+test('a failed state.json backup does not skip the interviews.json backup', async () => {
+  fs.mkdirSync(dataDir, { recursive: true })
+  fs.mkdirSync(path.join(dataDir, 'state.json')) // copying a folder fails
+  fs.writeFileSync(path.join(dataDir, 'interviews.json'), '{"version":1,"sessions":[]}')
+  const err = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  try {
+    await start()
+    const names = fs.readdirSync(path.join(dataDir, 'backups'))
+    expect(names.some((n) => /^interviews-\d{4}-\d{2}-\d{2}\.json$/.test(n))).toBe(true)
+    expect(err).toHaveBeenCalled()
+  } finally {
+    err.mockRestore()
+  }
+})
