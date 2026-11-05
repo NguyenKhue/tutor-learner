@@ -282,7 +282,9 @@ td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .warn ul { margin: 0; padding-left: 18px; }
 
 /* markdown */
-.md { display: grid; gap: 10px; font-size: 15px; min-width: 0; }
+.md { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; font-size: 15px; min-width: 0; }
+/* one column as wide as the card: a long code line scrolls inside its own block instead of widening the whole note */
+.md > * { min-width: 0; max-width: 100%; }
 .md p, .md ul, .md ol, .md h1, .md h2, .md h3, .md h4 { margin: 0; }
 .md ul, .md ol { padding-left: 20px; display: grid; gap: 4px; }
 .md h1 { font: 650 22px/1.2 var(--font-ui); letter-spacing: -0.01em; text-wrap: balance; }
