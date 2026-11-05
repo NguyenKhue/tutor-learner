@@ -490,7 +490,10 @@ details.more .english { border-top: 0; padding-top: 0; }
 .btn.amber { background: var(--iv-amber); border-color: var(--iv-amber); color: var(--iv-amber-ink); }
 .btn.amber:hover { filter: brightness(1.05); }
 /* keyboard focus is blue, never amber: amber already means "chosen" */
-:is(.interview, .debrief, .setup, .review) :is(.btn, a, input, textarea):focus-visible { outline: 3px solid var(--easy); outline-offset: 2px; }
+:is(.interview, .debrief, .setup, .review) :is(.btn, a, input):focus-visible { outline: 3px solid var(--easy); outline-offset: 2px; }
+/* a text box shows focus with its own border: no second ring drawn around it */
+:is(.setup, .answer-panel) textarea { transition: border-color 160ms var(--ease); }
+:is(.setup, .answer-panel) textarea:focus { outline: none; border-color: var(--ink); }
 .room { -webkit-tap-highlight-color: transparent; }
 
 /* the order of rounds: a real sequence, so the numbers carry meaning */
@@ -616,8 +619,6 @@ fieldset.setup-card > legend { float: left; width: 100%; padding: 0; }
 .setup-sub { padding: 0; font-weight: 600; font-size: 14px; }
 .setup-card .hint { margin: 0; }
 .setup textarea { width: 100%; box-sizing: border-box; resize: vertical; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--code-bg); color: var(--ink); font: 15px/1.5 var(--font-ui); }
-.setup textarea:focus { border-color: var(--muted); outline: none; }
-.setup textarea:focus-visible { outline: 3px solid var(--easy); outline-offset: 2px; }
 .setup-chip { min-height: 44px; padding-inline: 14px; font-size: 13px; }
 .setup-chip[aria-pressed='true'] { color: var(--iv-btn-ink); border-color: var(--iv-btn); background: var(--iv-btn); }
 .level-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
