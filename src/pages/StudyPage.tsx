@@ -5,6 +5,7 @@ import { AnswerBox } from '../components/AnswerBox'
 import { GradeResult } from '../components/GradeResult'
 import { LessonView } from '../components/LessonView'
 import { McqOptions } from '../components/McqOptions'
+import { Steps } from '../components/Steps'
 import { useHotkey } from '../hooks/useHotkey'
 import { useTutorData } from '../hooks/useTutorData'
 import { pointTitle } from '../lib/format'
@@ -20,21 +21,26 @@ type Step = 'load' | 'pretest' | 'lesson' | 'question' | 'result'
 /** The error message of any thrown request failure. */
 const asMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
-/** Where the learner is in the flow for this point. */
-function StudySteps({ kind, step }: { kind: Kind; step: Step }) {
-  const steps: [Step, string][] = kind === 'review'
-    ? [['question', 'Answer'], ['result', 'Result']]
-    : [['pretest', 'Guess'], ['lesson', 'Lesson'], ['question', 'Answer'], ['result', 'Result']]
-  const at = steps.findIndex(([s]) => s === step)
-  return (
-    <ol className="steps" aria-label="Steps">
-      {steps.map(([s, label], i) => (
-        <li key={s} className={i === at ? 'on' : i < at ? 'past' : ''} aria-current={i === at ? 'step' : undefined}>
-          {i < at ? `✓ ${label}` : label}
-        </li>
-      ))}
-    </ol>
-  )
+/** The steps shown for each flow, and where the current step sits in them. */
+function flowSteps(kind: Kind, step: Step): { items: string[]; at: number } {
+  const items = kind === 'review' ? ['Answer', 'Result'] : ['Guess', 'Lesson', 'Answer', 'Result']
+  const order: Step[] = kind === 'review' ? ['question', 'result'] : ['pretest', 'lesson', 'question', 'result']
+  const at = order.indexOf(step)
+  return { items, at: at < 0 ? 0 : at }
+}
+
+/** The small tag above the question, by its kind. */
+const QUESTION_TAG: Record<Question['kind'], string> = {
+  open: 'Open question',
+  mcq: 'Multiple choice',
+  pretest: 'Your guess',
+}
+
+/** The quiet line that says how to answer, by question kind. */
+const QUESTION_HINT: Record<Question['kind'], string> = {
+  open: 'Say it in your own words. Two or three ideas are enough.',
+  mcq: 'Pick the one that fits.',
+  pretest: 'Say what you think. It is fine to guess.',
 }
 
 /** The study flow for one point: a small state machine over pretest → lesson → question → result. */
@@ -225,17 +231,30 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
     }
   }, [attempt, reload])
 
+  const { items, at } = flowSteps(kind, step)
+  const wide = step === 'question'
+  const oneMoreOpen = point?.type === 'concept' && !!attempt && !!attempt.record && !attempt.record.passed_gate
+
   return (
-    <div>
+    <div className={wide ? 'study-page study-wide' : 'study-page read-col'}>
       <div className="study-bar">
         <Link className="back" to="/">← Today</Link>
         {place >= 0 && <span className="hint">{`${place + 1} of ${rows.length}`}</span>}
       </div>
-      <header className="study-head">
-        <h1>{pointTitle(pointId)}</h1>
-        <p>{topic}</p>
-      </header>
-      {step !== 'load' && <StudySteps kind={kind} step={step} />}
+
+      {step !== 'load' && (
+        <div className="study-top">
+          <Steps items={items} at={at} />
+          {step === 'question' && <span className="study-here">{pointTitle(pointId)}</span>}
+        </div>
+      )}
+
+      {step !== 'question' && !(step === 'result' && attempt?.grade) && (
+        <header className="study-head">
+          <p>{topic}</p>
+          <h1>{pointTitle(pointId)}</h1>
+        </header>
+      )}
 
       <div className="study">
         {(loadError || actionError) && (
@@ -246,10 +265,10 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
 
         {step === 'pretest' && (pretestQ ? (
           <section className="card step">
-            <p className="prompt">{pretestQ.prompt}</p>
+            <p className="prompt bigger">{pretestQ.prompt}</p>
             <AnswerBox ariaLabel="Your guess" value={pretestText} onChange={setPretestText} hint={speechHint} voice={pretestVoice} onVoice={setPretestVoice} onBusy={setSpeechBusy} target={false} />
             <div className="row">
-              <button type="button" className="btn primary" disabled={busy || speechBusy || pretestText.trim() === ''} onClick={() => void checkPretest(pretestText)}>
+              <button type="button" className="btn primary wide" disabled={busy || speechBusy || pretestText.trim() === ''} onClick={() => void checkPretest(pretestText)}>
                 Check
               </button>
               <button type="button" className="btn ghost" disabled={busy || speechBusy} onClick={() => void checkPretest(null)}>
@@ -261,7 +280,7 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
               <>
                 <p className="pretest-feedback">{pretestFeedback}</p>
                 <div className="row">
-                  <button type="button" className="btn primary" onClick={() => setStep('lesson')}>
+                  <button type="button" className="btn primary wide" onClick={() => setStep('lesson')}>
                     Read the lesson
                   </button>
                 </div>
@@ -273,46 +292,66 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
         ))}
 
         {step === 'lesson' && (
-          <LessonView
-            pointId={pointId}
-            footer={
-              <button type="button" className="btn primary" onClick={() => setStep('question')}>
-                Answer the question
-              </button>
-            }
-          />
+          <>
+            {pretestFeedback !== null && (
+              <section className="card guess-recap" aria-label="Your guess">
+                <span className="guess-label">Your guess</span>
+                {pretestText.trim() !== ''
+                  ? <p className="guess-said">{pretestText}</p>
+                  : <p className="guess-said muted">You chose to skip the guess.</p>}
+                <p className="guess-feedback">{pretestFeedback}</p>
+              </section>
+            )}
+            <LessonView
+              pointId={pointId}
+              footer={
+                <button type="button" className="btn primary wide" onClick={() => setStep('question')}>
+                  Answer the question
+                </button>
+              }
+            />
+          </>
         )}
 
         {step === 'question' && (question ? (
-          <section className="card step">
-            <p className="prompt big">{question.prompt}</p>
-            {question.kind === 'mcq' ? (
-              <McqOptions options={question.options ?? []} value={choice} onChange={setChoice} />
-            ) : (
-              <AnswerBox value={textAnswer} onChange={setTextAnswer} onSubmit={submit} hint={speechHint} voice={voice} onVoice={setVoice} onBusy={setSpeechBusy} />
-            )}
-            <div className="row">
-              <button type="button" className="btn primary wide" disabled={!canSubmit || busy || speechBusy} onClick={submit}>
-                Submit
-              </button>
-              {question.kind === 'mcq' && <span className="kbd-hint">Press 1–4 to pick an answer.</span>}
-            </div>
-            {busy && !qLoading && <Working text="Grading your answer" />}
-            <div className="row spread card-foot">
-              {kind === 'review' ? (
-                <button type="button" className="btn ghost" onClick={() => setShowLesson((v) => !v)}>
-                  {showLesson ? 'Hide lesson' : 'Show lesson'}
-                </button>
+          <>
+            <section className="room question-room" aria-label="Question">
+              <div className="question-kindline">
+                <span className="tag question-tag">{QUESTION_TAG[question.kind]}</span>
+                <span>{QUESTION_HINT[question.kind]}</span>
+              </div>
+              <p className="question-prompt">{question.prompt}</p>
+            </section>
+            <section className="card answer-card" aria-label="Your answer">
+              <div className="answer-head">
+                <span className="answer-label">Your answer</span>
+              </div>
+              {question.kind === 'mcq' ? (
+                <McqOptions options={question.options ?? []} value={choice} onChange={setChoice} />
               ) : (
-                <span />
+                <AnswerBox value={textAnswer} onChange={setTextAnswer} onSubmit={submit} hint={speechHint} voice={voice} onVoice={setVoice} onBusy={setSpeechBusy} />
               )}
-              <button type="button" className="btn ghost" disabled={busy} onClick={() => void regenerate()}>
-                New question
-              </button>
-            </div>
+              <div className="answer-actions">
+                <button type="button" className="btn primary wide" disabled={!canSubmit || busy || speechBusy} onClick={submit}>
+                  Submit
+                </button>
+                {question.kind === 'mcq' && <span className="kbd-hint">Press 1–4 to pick an answer.</span>}
+                <span className="answer-quiet">
+                  {kind === 'review' && (
+                    <button type="button" className="btn ghost" onClick={() => setShowLesson((v) => !v)}>
+                      {showLesson ? 'Hide lesson' : 'Show lesson'}
+                    </button>
+                  )}
+                  <button type="button" className="btn ghost" disabled={busy} onClick={() => void regenerate()}>
+                    New question
+                  </button>
+                </span>
+              </div>
+              {busy && !qLoading && <Working text="Grading your answer" />}
+            </section>
             {qLoading && <Working text="Preparing questions" />}
             {kind === 'review' && showLesson && <LessonView pointId={pointId} />}
-          </section>
+          </>
         ) : (
           <Working text="Preparing questions" />
         ))}
@@ -321,6 +360,7 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
           <GradeResult
             attempt={attempt}
             busy={busy}
+            title={pointTitle(pointId)}
             onContinue={confirmIt}
             onRetry={retry}
             onAppeal={appeal}
@@ -332,19 +372,26 @@ function Study({ pointId, kind }: { pointId: string; kind: Kind }) {
             <LessonView pointId={pointId} />
           </details>
         )}
-        {step === 'result' && attempt && (
-          <div className="study-foot">
-            {point?.type === 'concept' && attempt.record && !attempt.record.passed_gate && (
-              <button type="button" className="btn" onClick={oneMore}>
-                One more question
-              </button>
-            )}
-            {attempt.state === 'recorded' && (
-              <button type="button" className="btn primary wide" onClick={goNext}>
-                {nextRow ? `Next: ${nextRow.title}` : 'Back to Today'} <kbd>n</kbd>
-              </button>
-            )}
-          </div>
+        {step === 'result' && attempt && (attempt.state === 'recorded' || oneMoreOpen) && (
+          <section className="room next-room" aria-labelledby="up-h">
+            <div className="next-copy">
+              <span className="room-eyebrow">{nextRow ? 'Up next' : 'Done for now'}</span>
+              <h2 id="up-h">{nextRow ? nextRow.title : 'Back to Today'}</h2>
+              {nextRow?.topic && <p className="next-topic">{nextRow.topic}</p>}
+            </div>
+            <div className="next-actions">
+              {attempt.state === 'recorded' && (
+                <button type="button" className="btn amber wide" onClick={goNext}>
+                  {nextRow ? `Next: ${nextRow.title}` : 'Back to Today'} <kbd>n</kbd>
+                </button>
+              )}
+              {oneMoreOpen && (
+                <button type="button" className="btn on-dark" onClick={oneMore}>
+                  One more question
+                </button>
+              )}
+            </div>
+          </section>
         )}
       </div>
     </div>

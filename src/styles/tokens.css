@@ -1,25 +1,59 @@
-/* Tutor tokens (shared look with algorithm-learner). Layout: one quiet column (max 880px) on dotted notebook paper; cards are the only raised objects. */
+/* Tutor tokens: paper, ink, the dark "room" for the one thing to do now, and the status colours. */
 :root {
   --bg: #f6f6f2;
   --grid: #e3e4dc;
   --surface: #ffffff;
   --surface-done: #fbfbf8;
-  --ink: #1d221f;
-  --muted: #6a706a;
+  --ink: #15202b;
+  --muted: #5e6670;
   --line: #e2e3dc;
+
+  /* the dark room: one per screen, for the thing to do now */
+  --room: #17222e;
+  --room-2: #22303f;
+  --room-line: #3a4b5d;
+  --room-ink: #f4f6f8;
+  --room-muted: #a9b4c1;
+
+  /* the one chosen action */
+  --amber: #f2b33d;
+  --amber-text: #8a5a00;
+  --amber-soft: #fff1d6;
+
+  /* sage: done, mastered, progress */
   --accent: #3d6b50;
   --accent-soft: #e6efe8;
   --accent-line: #b9cfc0;
+  --sage: #3d6b50;
+  --sage-soft: #e6efe8;
+  --sage-text: #2e5a40;
   --zone: #548a66;
   --on-accent: #ffffff;
-  --again: #a4432e;
-  --hard: #8a5d12;
   --good: #3d6b50;
-  --easy: #3f7398;
-  --again-soft: #f6e7e2;
-  --hard-soft: #f6eedd;
   --good-soft: #e6efe8;
-  --easy-soft: #e4edf4;
+
+  /* brick: wrong, again, still there */
+  --again: #a4432e;
+  --again-soft: #f6e7e2;
+  --brick: #a4432e;
+  --brick-soft: #f6e7e2;
+  --brick-text: #8c3522;
+
+  /* blue: links, new, keyboard focus */
+  --blue: #2d6ca3;
+  --blue-text: #1f4f7a;
+  --blue-soft: #e3ecf5;
+
+  /* grades: again, hard, good, easy */
+  --hard: #8a5a00;
+  --hard-soft: #fff1d6;
+  --easy: #2d6ca3;
+  --easy-soft: #e3ecf5;
+
+  /* read tags */
+  --purple-text: #5b3f8c;
+  --purple-soft: #efeaf7;
+
   --code-bg: #f9f9f6;
   --heat-0: #e6e7e0;
   --heat-1: #c8dccd;
@@ -27,67 +61,130 @@
   --heat-3: #5f8f6e;
   --heat-4: #3d6b50;
   --font-ui: 'Instrument Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-voice: 'Atkinson Hyperlegible Next', 'Atkinson Hyperlegible', var(--font-ui);
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --bg: #141413;
-    --grid: #22231f;
-    --surface: #1c1d1a;
-    --surface-done: #181917;
-    --ink: #ebebe5;
-    --muted: #9a9d94;
-    --line: #2d2f2a;
+    --bg: #0f1216;
+    --grid: #1b2027;
+    --surface: #171c22;
+    --surface-done: #141920;
+    --ink: #eef2f6;
+    --muted: #9aa5b1;
+    --line: #2a323b;
+
+    --room: #1a2632;
+    --room-2: #24333f;
+    --room-line: #3a4b5d;
+    --room-ink: #f4f6f8;
+    --room-muted: #a9b4c1;
+
+    --amber: #f2b33d;
+    --amber-text: #f2c46b;
+    --amber-soft: #3a2f17;
+
     --accent: #8dbb9b;
-    --accent-soft: #223029;
-    --accent-line: #3f5a49;
+    --accent-soft: #20302a;
+    --accent-line: #3c5a4a;
+    --sage: #8dbb9b;
+    --sage-soft: #20302a;
+    --sage-text: #9fd0b2;
     --zone: #6a9877;
-    --on-accent: #10160f;
-    --again: #e08a70;
-    --hard: #dcae5e;
+    --on-accent: #10161c;
     --good: #8dbb9b;
-    --easy: #8ab6d8;
+    --good-soft: #20302a;
+
+    --again: #e08a70;
     --again-soft: #33221d;
-    --hard-soft: #322a1b;
-    --good-soft: #223029;
-    --easy-soft: #1d2a34;
-    --code-bg: #171815;
-    --heat-0: #252723;
+    --brick: #e08a70;
+    --brick-soft: #33221d;
+    --brick-text: #f0a08c;
+
+    --blue: #7fb3e6;
+    --blue-text: #9cc7ee;
+    --blue-soft: #1b2a36;
+
+    --hard: #f2c46b;
+    --hard-soft: #3a2f17;
+    --easy: #8ab6d8;
+    --easy-soft: #1b2a36;
+
+    --purple-text: #c4b0e8;
+    --purple-soft: #2a2438;
+
+    --code-bg: #12181f;
+    --heat-0: #232b33;
     --heat-1: #2f4537;
     --heat-2: #44684f;
     --heat-3: #6a9877;
     --heat-4: #8dbb9b;
+    --font-ui: 'Instrument Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-voice: 'Atkinson Hyperlegible Next', 'Atkinson Hyperlegible', var(--font-ui);
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
     color-scheme: dark;
   }
 }
 :root[data-theme='dark'] {
-  --bg: #141413;
-  --grid: #22231f;
-  --surface: #1c1d1a;
-  --surface-done: #181917;
-  --ink: #ebebe5;
-  --muted: #9a9d94;
-  --line: #2d2f2a;
+  --bg: #0f1216;
+  --grid: #1b2027;
+  --surface: #171c22;
+  --surface-done: #141920;
+  --ink: #eef2f6;
+  --muted: #9aa5b1;
+  --line: #2a323b;
+
+  --room: #1a2632;
+  --room-2: #24333f;
+  --room-line: #3a4b5d;
+  --room-ink: #f4f6f8;
+  --room-muted: #a9b4c1;
+
+  --amber: #f2b33d;
+  --amber-text: #f2c46b;
+  --amber-soft: #3a2f17;
+
   --accent: #8dbb9b;
-  --accent-soft: #223029;
-  --accent-line: #3f5a49;
+  --accent-soft: #20302a;
+  --accent-line: #3c5a4a;
+  --sage: #8dbb9b;
+  --sage-soft: #20302a;
+  --sage-text: #9fd0b2;
   --zone: #6a9877;
-  --on-accent: #10160f;
-  --again: #e08a70;
-  --hard: #dcae5e;
+  --on-accent: #10161c;
   --good: #8dbb9b;
-  --easy: #8ab6d8;
+  --good-soft: #20302a;
+
+  --again: #e08a70;
   --again-soft: #33221d;
-  --hard-soft: #322a1b;
-  --good-soft: #223029;
-  --easy-soft: #1d2a34;
-  --code-bg: #171815;
-  --heat-0: #252723;
+  --brick: #e08a70;
+  --brick-soft: #33221d;
+  --brick-text: #f0a08c;
+
+  --blue: #7fb3e6;
+  --blue-text: #9cc7ee;
+  --blue-soft: #1b2a36;
+
+  --hard: #f2c46b;
+  --hard-soft: #3a2f17;
+  --easy: #8ab6d8;
+  --easy-soft: #1b2a36;
+
+  --purple-text: #c4b0e8;
+  --purple-soft: #2a2438;
+
+  --code-bg: #12181f;
+  --heat-0: #232b33;
   --heat-1: #2f4537;
   --heat-2: #44684f;
   --heat-3: #6a9877;
   --heat-4: #8dbb9b;
+  --font-ui: 'Instrument Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-voice: 'Atkinson Hyperlegible Next', 'Atkinson Hyperlegible', var(--font-ui);
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
   color-scheme: dark;
 }

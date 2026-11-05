@@ -51,57 +51,69 @@ function Progress({ data }: { data: Overview }) {
   const interviewDays = data.export.config.interview_date ? daysBetween(today, data.export.config.interview_date) : null
   const anyDue = forecast.some((d) => d.count > 0)
 
+  const date = data.export.config.interview_date
+  const dateLine = date
+    ? `Interview on ${new Date(`${date}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' })}`
+    : null
+
   return (
-    <>
-      <header className="page-head">
-        <h1>Progress</h1>
-      </header>
-
-      {paceInfo.perDay === null ? (
-        <p className="hint">No interview date set.</p>
-      ) : (
-        <div className={behind ? 'pace behind' : 'pace'}>
-          <b>{behind ? 'Behind pace' : 'On track'}</b>
-          <p>{`You plan ${planned} new ${planned === 1 ? 'point' : 'points'} a day. You need about ${paceInfo.perDay} to finish 4 weeks before the interview.`}</p>
-          {behind && <Link className="btn primary" to="/settings">Change daily goal</Link>}
+    <div className="progress-page">
+      <section className="room progress-room" aria-labelledby="progress-h">
+        <div className="progress-verdict">
+          <h1 id="progress-h" className="progress-title">Progress</h1>
+          {dateLine && <p className="room-eyebrow">{dateLine}</p>}
+          {paceInfo.perDay === null ? (
+            <p className="progress-pace">No interview date set.</p>
+          ) : (
+            <>
+              <p className={behind ? 'progress-state behind' : 'progress-state'}>{behind ? 'Behind pace' : 'On track'}</p>
+              <p className="progress-pace">{`You plan ${planned} new ${planned === 1 ? 'point' : 'points'} a day. You need about ${paceInfo.perDay} to finish 4 weeks before the interview.`}</p>
+              {behind && <Link className="btn on-dark" to="/settings">Change daily goal</Link>}
+            </>
+          )}
         </div>
-      )}
-
-      <div className="stat-tiles">
-        <div className="tile-stat"><b>{`${mastered} / ${points.length}`}</b><span>mastered</span></div>
-        {interviewDays !== null && <div className="tile-stat"><b>{interviewDays}</b><span>days left</span></div>}
-        <div className="tile-stat"><b>{streak(points, today)}</b><span>day streak</span></div>
-      </div>
-
-      <section aria-labelledby="activity-h">
-        <h2 id="activity-h">Your answers</h2>
-        <ActivityCalendar
-          data={heat}
-          tooltips={TOOLTIPS}
-          theme={{ light: HEAT, dark: HEAT }}
-          showWeekdayLabels={['mon', 'wed', 'fri']}
-          labels={{ totalCount: '{{count}} answers so far' }}
-          fontSize={11}
-          blockSize={11}
-          blockMargin={2}
-        />
+        <div className="stat-tiles">
+          <div className="tile-stat"><b>{`${mastered} / ${points.length}`}</b><span>mastered</span></div>
+          {interviewDays !== null && <div className="tile-stat"><b>{interviewDays}</b><span>days left</span></div>}
+          <div className="tile-stat streak"><b>{streak(points, today)}</b><span>day streak</span></div>
+        </div>
       </section>
 
-      {anyDue && (
-        <section aria-labelledby="forecast-h">
-          <h2 id="forecast-h">Reviews coming up</h2>
-          <div className="bars" role="list" aria-label="Reviews coming up">
-            {forecast.map((day) => (
-              <div key={day.date} role="listitem" aria-label={`${day.date}: ${day.count} due`}>
-                <b>{day.count || ''}</b>
-                <i style={{ height: `${barHeight(day.count)}px` }} />
-                <span>{day.date.slice(8)}</span>
-              </div>
-            ))}
-          </div>
+      <div className="work">
+        <section className="card work-main progress-card" aria-labelledby="activity-h">
+          <h2 id="activity-h">Your answers</h2>
+          <ActivityCalendar
+            data={heat}
+            tooltips={TOOLTIPS}
+            theme={{ light: HEAT, dark: HEAT }}
+            showWeekdayLabels={['mon', 'wed', 'fri']}
+            labels={{ totalCount: '{{count}} answers so far' }}
+            fontSize={11}
+            blockSize={12}
+            blockMargin={3}
+          />
         </section>
-      )}
-    </>
+
+        <section className="card work-aside progress-card" aria-labelledby="forecast-h">
+          <h2 id="forecast-h">Reviews coming up</h2>
+          {anyDue ? (
+            <>
+              <div className="bars" role="list" aria-label="Reviews coming up">
+                {forecast.map((day) => (
+                  <div key={day.date} role="listitem" aria-label={`${day.date}: ${day.count} due`}>
+                    <b>{day.count || ''}</b>
+                    <i style={{ height: `${barHeight(day.count)}px` }} />
+                  </div>
+                ))}
+              </div>
+              <div className="bars-ends" aria-hidden="true"><span>Today</span><span>In 2 weeks</span></div>
+            </>
+          ) : (
+            <p className="hint">Nothing due in the next two weeks.</p>
+          )}
+        </section>
+      </div>
+    </div>
   )
 }
 

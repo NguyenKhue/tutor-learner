@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { InterviewAnswer, type AnswerPhase } from './InterviewAnswer'
+import { Steps } from './Steps'
 import { targetFor } from '../lib/answerTime'
 import { ROUND_LABEL } from '../lib/interview'
 import { onSpeaking, speak, speechAvailable, stopSpeaking } from '../lib/speak'
@@ -20,16 +21,7 @@ interface Props {
 function Rounds({ session }: { session: InterviewSession }) {
   const plan = session.plan ?? []
   const at = session.current ? session.current.round : plan.length
-  return (
-    <ol className="rounds" aria-label="Rounds">
-      {plan.map((r, i) => (
-        <li key={i} className={i < at ? 'past' : i === at ? 'on' : ''} aria-current={i === at ? 'step' : undefined}>
-          <span className="rounds-n" aria-hidden="true">{i < at ? '✓' : i + 1}</span>
-          {ROUND_LABEL[r.kind]}
-        </li>
-      ))}
-    </ol>
-  )
+  return <Steps items={plan.map((r) => ROUND_LABEL[r.kind])} at={at} label="Rounds" />
 }
 
 /** The live interview: who is speaking and what they said, the answer box, and the ways forward. */

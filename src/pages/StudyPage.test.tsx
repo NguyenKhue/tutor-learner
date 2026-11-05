@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 import { App } from '../app/App'
@@ -293,8 +293,9 @@ test('steps and the place in today\'s list show where you are', async () => {
   await screen.findByText('What do you already know?')
   expect(screen.getByRole('link', { name: '← Today' })).toHaveAttribute('href', '/')
   expect(screen.getByText('1 of 1')).toBeInTheDocument()
-  expect(screen.getByRole('list', { name: 'Steps' })).toHaveTextContent('GuessLessonAnswerResult')
-  expect(screen.getByText('Guess')).toHaveAttribute('aria-current', 'step')
+  const steps = within(screen.getByRole('list', { name: 'Steps' })).getAllByRole('listitem')
+  expect(steps.map((li) => li.textContent?.replace(/^[0-9✓]/, ''))).toEqual(['Guess', 'Lesson', 'Answer', 'Result'])
+  expect(steps[0]).toHaveAttribute('aria-current', 'step')
 })
 
 test('a failed answer must be confirmed before Next appears', async () => {

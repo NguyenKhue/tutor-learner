@@ -40,7 +40,7 @@ test('the next thing to do has one Start button', async () => {
   goTo('/')
   render(<App />)
   const next = await screen.findByRole('region', { name: 'How suspend works' })
-  expect(within(next).getByText('Next · Review')).toBeInTheDocument()
+  expect(within(next).getByText('Next, a review')).toBeInTheDocument()
   expect(within(next).getByRole('link', { name: 'Start' })).toHaveAttribute('href', `/study/${encodeURIComponent(A)}?kind=review`)
 })
 

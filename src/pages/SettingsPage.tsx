@@ -74,98 +74,121 @@ export function SettingsPage() {
     }
   }
 
+  /** Moves a number box by one step, kept inside its min and max. */
+  const step = (value: string, by: number, min: number, max: number, set: (v: string) => void) => {
+    const n = Number(value)
+    set(String(Math.min(max, Math.max(min, (Number.isFinite(n) ? Math.round(n) : min) + by))))
+    setSaved(false)
+  }
+
   return (
-    <>
+    <div className="settings read-col">
       <header className="page-head">
         <h1>Settings</h1>
       </header>
 
-      <div className="form">
-        {saveError !== null && (
-          <div className="error-box" role="alert">
-            {saveError.message}
-          </div>
-        )}
+      {saveError !== null && (
+        <div className="error-box" role="alert">
+          {saveError.message}
+        </div>
+      )}
 
-        <div className="panel">
-          <div className="field">
+      <section className="card settings-card" aria-labelledby="study-h">
+        <h2 id="study-h">Daily study</h2>
+        <div className="setting-row">
+          <div className="setting-text">
             <label htmlFor="new-per-day">New points per day</label>
+            <p className="hint">New points added to Today, from 1 to 10.</p>
+          </div>
+          <div className="stepper">
+            <button type="button" className="btn" aria-label="Fewer new points per day" onClick={() => step(perDay, -1, 1, 10, setNewPerDay)}>−</button>
             <input
               id="new-per-day"
               type="number"
-              className="mono"
               inputMode="numeric"
               min={1}
               max={10}
               value={perDay}
               onChange={(e) => setNewPerDay(e.target.value)}
             />
+            <button type="button" className="btn" aria-label="More new points per day" onClick={() => step(perDay, 1, 1, 10, setNewPerDay)}>+</button>
           </div>
-          <div className="field">
+        </div>
+        <div className="setting-row">
+          <div className="setting-text">
             <label htmlFor="reading-per-day">Reading reviews per day</label>
+            <p className="hint">Notes to recheck, on top of new reading.</p>
+          </div>
+          <div className="stepper">
+            <button type="button" className="btn" aria-label="Fewer reading reviews per day" onClick={() => step(readingReviews, -1, 0, 10, setReadingPerDay)}>−</button>
             <input
               id="reading-per-day"
               type="number"
-              className="mono"
               inputMode="numeric"
               min={0}
               max={10}
               value={readingReviews}
               onChange={(e) => setReadingPerDay(e.target.value)}
             />
+            <button type="button" className="btn" aria-label="More reading reviews per day" onClick={() => step(readingReviews, 1, 0, 10, setReadingPerDay)}>+</button>
           </div>
-          <div className="field inline">
+        </div>
+        <div className="setting-row">
+          <div className="setting-text">
             <label htmlFor="english-feedback">English feedback</label>
-            <input
-              id="english-feedback"
-              type="checkbox"
-              checked={englishFeedback}
-              onChange={(e) => setEnglish(e.target.checked)}
-            />
+            <p className="hint">Notes on grammar and wording after each answer.</p>
           </div>
-          <div className="row">
-            <button type="button" className="btn primary" disabled={saving} onClick={() => void save()}>
-              Save
+          <input
+            id="english-feedback"
+            className="switch"
+            type="checkbox"
+            checked={englishFeedback}
+            onChange={(e) => setEnglish(e.target.checked)}
+          />
+        </div>
+        <div className="setting-save">
+          <button type="button" className="btn primary" disabled={saving} onClick={() => void save()}>
+            Save
+          </button>
+          {saved && <span className="hint saved">Saved</span>}
+        </div>
+      </section>
+
+      <section className="card settings-card setting-row" aria-labelledby="theme-h">
+        <div className="setting-text">
+          <h2 id="theme-h">Theme</h2>
+          <p className="hint">Changes right away.</p>
+        </div>
+        <span className="theme" role="group" aria-label="Theme">
+          {THEMES.map(([t, label]) => (
+            <button
+              key={t}
+              type="button"
+              aria-pressed={theme === t}
+              onClick={() => {
+                setTheme(t)
+                saveTheme(t)
+              }}
+            >
+              {label}
             </button>
-            {saved && <span className="hint">Saved</span>}
-          </div>
-        </div>
+          ))}
+        </span>
+      </section>
 
-        <div className="panel">
-          <div className="field">
-            <span className="field-label">Theme</span>
-            <p className="hint">Changes right away.</p>
-            <span className="theme" role="group" aria-label="Theme">
-              {THEMES.map(([t, label]) => (
-                <button
-                  key={t}
-                  type="button"
-                  aria-pressed={theme === t}
-                  onClick={() => {
-                    setTheme(t)
-                    saveTheme(t)
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </span>
-          </div>
+      <section className="card settings-card" aria-labelledby="connected-h">
+        <h2 id="connected-h">Connected</h2>
+        <div className="setting-row">
+          <span className="setting-name">Vault</span>
+          <span className="hint mono">{data.vaultName}</span>
         </div>
-
-        <div className="panel">
-          <div className="field">
-            <label>Vault</label>
-            <p className="hint mono">{data.vaultName}</p>
-          </div>
-          <div className="field">
-            <label>Claude</label>
-            <p className="hint">
-              {claude?.lastError != null ? `Last error: ${claude.lastError.message}` : 'OK'}
-            </p>
-          </div>
+        <div className="setting-row">
+          <span className="setting-name">Claude</span>
+          <span className="hint">
+            {claude?.lastError != null ? `Last error: ${claude.lastError.message}` : <><i className="ok-dot" aria-hidden="true" />OK</>}
+          </span>
         </div>
-      </div>
-    </>
+      </section>
+    </div>
   )
 }

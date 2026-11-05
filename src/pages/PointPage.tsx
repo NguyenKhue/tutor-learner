@@ -48,30 +48,39 @@ export function PointPage() {
 
   const kind = point.next_review && point.next_review <= data.today ? 'review' : 'learn'
   const sources = point.sources.filter((s) => wikilinkTarget(s) !== null)
+  const pct = Math.round(point.mastery * 100)
+  const tag = point.status === 'mastered' ? 'tag tag-mastered' : point.status === 'new' ? 'tag tag-new' : 'tag'
   return (
     <>
       <Link className="back page-back" to={`/topics/${encodeURIComponent(point.topic)}`}>{`← ${point.topic}`}</Link>
-      <header className="page-head">
+      <header className="page-head point-head">
         <h1>{pointTitle(point.id)}</h1>
-        <div className="meta">
-          <span>{STATUS_LABEL[point.status]}</span>
-          <span className="mastery-pct">{Math.round(point.mastery * 100)}%</span>
-          {point.next_review && <span>Next review {point.next_review}</span>}
-        </div>
       </header>
 
-      <div className="study">
-        <div className="row">
-          <Link className="btn primary" to={`/study/${encodeURIComponent(point.id)}?kind=${kind}`}>
+      <div className="point-page">
+        <section className="room point-room" aria-label="Study this point">
+          <span className="room-eyebrow">Study this point</span>
+          <div className="point-room-head">
+            <span className={tag}>{STATUS_LABEL[point.status]}</span>
+            <span className="point-room-pct">{`${pct}% mastered`}</span>
+          </div>
+          <span className={`mastery-bar${point.status === 'mastered' ? ' is-mastered' : ''}`} aria-hidden="true">
+            <i style={{ width: `${pct}%` }} />
+          </span>
+          {point.next_review && <p className="point-room-note">Next review {point.next_review}</p>}
+          <Link className="btn amber" to={`/study/${encodeURIComponent(point.id)}?kind=${kind}`}>
             Study now
           </Link>
-          <a className="btn" href={obsidianUrl(data.vaultName, `Tutor/Lessons/${point.id}.md`)}>
+        </section>
+
+        <div className="point-actions">
+          <a className="btn outline" href={obsidianUrl(data.vaultName, `Tutor/Lessons/${point.id}.md`)}>
             Open lesson in Obsidian
           </a>
         </div>
 
         {sources.length > 0 && (
-          <section aria-labelledby="sources-h">
+          <section className="card point-card" aria-labelledby="sources-h">
             <h2 id="sources-h">Sources</h2>
             <ul className="subs">
               {sources.map((s) => (
@@ -83,7 +92,7 @@ export function PointPage() {
           </section>
         )}
 
-        <section aria-labelledby="history-h">
+        <section className="card point-card" aria-labelledby="history-h">
           <h2 id="history-h">History</h2>
           {point.history.length === 0 ? (
             <p className="hint">Nothing yet.</p>
@@ -103,7 +112,7 @@ export function PointPage() {
           )}
         </section>
 
-        <section aria-labelledby="attempts-h">
+        <section className="card point-card" aria-labelledby="attempts-h">
           <h2 id="attempts-h">Answers from the web</h2>
           {attemptsError !== null && (
             <div className="error-box" role="alert">

@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { expect, test } from 'vitest'
-import { Markdown } from './Markdown'
+import { Markdown, headingsOf } from './Markdown'
 
 const md = (text: string) => render(<MemoryRouter><Markdown text={text} /></MemoryRouter>)
 
@@ -37,4 +37,15 @@ test('shows images from the web', () => {
 test('does not load other URL schemes as images', () => {
   render(<MemoryRouter><Markdown text="![x](javascript:alert(1))" notePath="A.md" /></MemoryRouter>)
   expect(screen.queryByRole('img')).toBeNull()
+})
+
+test('h2 headings get ids the side contents can link to, unique on the page', () => {
+  const text = '# Title\n\n## What a dispatcher does\n\ntext\n\n## Default & IO\n\n## Default & IO\n'
+  expect(headingsOf(text)).toEqual([
+    { id: 'what-a-dispatcher-does', text: 'What a dispatcher does' },
+    { id: 'default-io', text: 'Default & IO' },
+    { id: 'default-io-2', text: 'Default & IO' },
+  ])
+  const { container } = md(text)
+  expect([...container.querySelectorAll('h2')].map((h) => h.id)).toEqual(['what-a-dispatcher-does', 'default-io', 'default-io-2'])
 })

@@ -21,6 +21,38 @@ export interface MarkdownLinks {
 
 const cells = (line: string) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim())
 
+/** A heading id from its text: lower case, non-alphanumerics become '-', trimmed, and repeated text gets -2, -3. */
+function slugger() {
+  const counts = new Map<string, number>()
+  const used = new Set<string>()
+  return (text: string) => {
+    const base = text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '')
+    let n = (counts.get(base) ?? 0) + 1
+    let id = n === 1 ? base : `${base}-${n}`
+    while (used.has(id)) {
+      n++
+      id = `${base}-${n}`
+    }
+    counts.set(base, n)
+    used.add(id)
+    return id
+  }
+}
+
+/** The h2 headings of a note, in order, with the ids the rendered markdown gives them. */
+export function headingsOf(markdown: string): { id: string; text: string }[] {
+  const id = slugger()
+  const out: { id: string; text: string }[] = []
+  const walk = (blocks: Block[]) => {
+    for (const b of blocks) {
+      if (b.k === 'h' && b.level === 2) out.push({ id: id(b.text), text: b.text })
+      else if (b.k === 'quote') walk(b.blocks)
+    }
+  }
+  walk(parseBlocks(stripFrontmatter(markdown)))
+  return out
+}
+
 /** Splits `src` into blocks: headings, bullet/numbered lists, fenced code and paragraphs. */
 function parseBlocks(src: string): Block[] {
   const lines = src.split('\n')
@@ -148,15 +180,15 @@ function inline(text: string, links: MarkdownLinks = {}): ReactNode[] {
   return out
 }
 
-/** Renders one parsed block; the heading tag follows the `#` count. */
-function block(b: Block, key: number, links: MarkdownLinks): ReactNode {
+/** Renders one parsed block; the heading tag follows the `#` count, and h2s carry an anchor id. */
+function block(b: Block, key: number, links: MarkdownLinks, headingId: (text: string) => string): ReactNode {
   const inline_ = (t: string) => inline(t, links)
   switch (b.k) {
     case 'code':
       return <pre key={key}><code>{b.code}</code></pre>
     case 'h': {
       const Tag = ['h1', 'h2', 'h3', 'h4'][Math.min(4, Math.max(1, b.level)) - 1] as 'h1' | 'h2' | 'h3' | 'h4'
-      return <Tag key={key}>{inline_(b.text)}</Tag>
+      return <Tag key={key} id={b.level === 2 ? headingId(b.text) : undefined}>{inline_(b.text)}</Tag>
     }
     case 'ul':
       return (
@@ -173,7 +205,7 @@ function block(b: Block, key: number, links: MarkdownLinks): ReactNode {
     case 'p':
       return <p key={key}>{inline_(b.text)}</p>
     case 'quote':
-      return <blockquote key={key}>{b.blocks.map((inner, i) => block(inner, i, links))}</blockquote>
+      return <blockquote key={key}>{b.blocks.map((inner, i) => block(inner, i, links, headingId))}</blockquote>
     case 'table':
       return (
         <div className="table-wrap" key={key}>
@@ -192,7 +224,8 @@ function block(b: Block, key: number, links: MarkdownLinks): ReactNode {
 /** A small safe markdown renderer: no dangerouslySetInnerHTML and no dependencies. */
 export function Markdown({ text, notePath, resolveLink }: { text: string } & MarkdownLinks) {
   const links = { notePath, resolveLink }
-  return <div className="md">{parseBlocks(stripFrontmatter(text)).map((b, i) => block(b, i, links))}</div>
+  const headingId = slugger()
+  return <div className="md">{parseBlocks(stripFrontmatter(text)).map((b, i) => block(b, i, links, headingId))}</div>
 }
 
 /** Drops a leading YAML frontmatter block so notes start at their content. */

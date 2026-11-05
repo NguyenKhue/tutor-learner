@@ -40,25 +40,33 @@ export function ReadingQuiz({ path, quiz, initial, onGraded }: { path: string; q
   const appeal = () => run(() => api.post<ReadingCheck>('/api/reading/check/appeal', { path, id: check!.id, reason }))
 
   if (!check) {
+    const answered = quiz.questions.filter((q) => (answers[q.q] ?? '').trim()).length
     return (
-      <section className="card quiz" aria-label="Quiz">
+      <section className="quiz" aria-label="Quiz">
         {error && <div className="error-box" role="alert">{error}</div>}
-        {quiz.questions.map((q) => (
-          <div className="field" key={q.q}>
-            <label htmlFor={`a-${q.q}`}>{q.prompt}</label>
-            <textarea
-              id={`a-${q.q}`}
-              className="answer"
-              rows={4}
-              value={answers[q.q] ?? ''}
-              onChange={(e) => setAnswers({ ...answers, [q.q]: e.target.value })}
-            />
-          </div>
-        ))}
-        <div className="row">
+        {quiz.questions.map((q, i) => {
+          const filled = !!(answers[q.q] ?? '').trim()
+          return (
+            <div className="quiz-card" key={q.q}>
+              <div className="quiz-q">
+                <span className={filled ? 'quiz-n done' : 'quiz-n'} aria-hidden="true">{filled ? '✓' : i + 1}</span>
+                <label htmlFor={`a-${q.q}`} className="quiz-prompt">{q.prompt}</label>
+              </div>
+              <textarea
+                id={`a-${q.q}`}
+                className="answer"
+                rows={4}
+                value={answers[q.q] ?? ''}
+                onChange={(e) => setAnswers({ ...answers, [q.q]: e.target.value })}
+              />
+            </div>
+          )
+        })}
+        <div className="quiz-actions">
           <button type="button" className="btn primary" disabled={!ready || busy} onClick={() => void submit()}>
             Submit
           </button>
+          <span className="quiz-count">{answered} of {quiz.questions.length} answered</span>
           {busy && <Working text="Grading your answer" />}
         </div>
       </section>
@@ -67,23 +75,25 @@ export function ReadingQuiz({ path, quiz, initial, onGraded }: { path: string; q
 
   const byQ = new Map((check.results ?? []).map((r) => [r.q, r]))
   return (
-    <section className="card quiz" aria-label="Quiz result">
+    <section className="quiz quiz-result" aria-label="Quiz result">
       {error && <div className="error-box" role="alert">{error}</div>}
-      {check.state === 'graded' ? (
-        <div className={`grade-big ${check.passed ? 'ok' : 'no'}`}>{check.passed ? 'Passed' : 'Read again in 2 days'}</div>
-      ) : (
-        <div className="grade-block">
-          <p className="grade-warn">{ERROR_TEXT[check.error?.code ?? 'failed'] ?? ERROR_TEXT.failed}</p>
-          <button type="button" className="btn primary" disabled={busy} onClick={() => void retry()}>
-            Grade again
-          </button>
-        </div>
-      )}
+      <div className="card quiz-verdict">
+        {check.state === 'graded' ? (
+          <div className={`grade-big ${check.passed ? 'ok' : 'no'}`}>{check.passed ? 'Passed' : 'Read again in 2 days'}</div>
+        ) : (
+          <div className="grade-block">
+            <p className="grade-warn">{ERROR_TEXT[check.error?.code ?? 'failed'] ?? ERROR_TEXT.failed}</p>
+            <button type="button" className="btn primary" disabled={busy} onClick={() => void retry()}>
+              Grade again
+            </button>
+          </div>
+        )}
+      </div>
       {quiz.questions.map((q) => {
         const r = byQ.get(q.q)
         const english = check.english?.[q.q]
         return (
-          <div className="grade-block" key={q.q}>
+          <div className="card quiz-card grade-block" key={q.q}>
             <div className="grade-label">{q.prompt}</div>
             <p className="saved">{check.answers[q.q]}</p>
             {r && (
@@ -108,7 +118,7 @@ export function ReadingQuiz({ path, quiz, initial, onGraded }: { path: string; q
         )
       })}
       {check.state === 'graded' && check.passed === false && !check.appealed && (
-        <div className="grade-block">
+        <div className="card quiz-card grade-block">
           {appealing ? (
             <>
               <label htmlFor="appeal">Why your answers are right</label>
